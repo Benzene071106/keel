@@ -17,7 +17,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
   .item { margin: 0 0 8px; }
   .req { font-weight: 600; padding: 6px 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); }
   .say { white-space: pre-wrap; line-height: 1.45; }
-  .tool { font-family: var(--vscode-editor-font-family); font-size: 12px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool { font-family: var(--vscode-editor-font-family); font-size: 12px; opacity: .85; overflow-wrap: anywhere; }
   .tool b { font-weight: 600; }
   .note { font-size: 12px; padding: 4px 8px; border-left: 3px solid var(--vscode-editorWarning-foreground); background: var(--vscode-inputValidation-warningBackground, transparent); }
   .note.err { border-left-color: var(--vscode-editorError-foreground); background: var(--vscode-inputValidation-errorBackground, transparent); }
@@ -36,7 +36,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
   .chg { font-size: 12px; }
   .chg .rej { color: var(--vscode-editorWarning-foreground); }
   form { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--vscode-panel-border); }
-  textarea { flex: 1; resize: none; min-height: 34px; max-height: 120px; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 6px; }
+  textarea { flex: 1; min-width: 0; overflow: hidden; resize: none; min-height: 34px; max-height: 120px; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 3px; padding: 6px; }
   textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
   button { font: inherit; border: 0; border-radius: 3px; padding: 4px 10px; cursor: pointer; color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
   button:hover { background: var(--vscode-button-hoverBackground); }
@@ -55,7 +55,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
   </div>
   <div id="feed"><div class="empty" id="empty">Ask Keel to change something. It first shows which files it picked and why, then proposes edits you accept or reject hunk by hunk.<br><br>Mention files or symbols with @, e.g. <code>@src/flask/cli.py</code>.</div></div>
   <form id="form">
-    <textarea id="input" rows="1" placeholder="What should Keel do? (Enter to send, Shift+Enter for a new line)"></textarea>
+    <textarea id="input" rows="1" placeholder="Ask Keel to change something" title="Enter to send, Shift+Enter for a new line"></textarea>
     <button id="send" type="submit">Run</button>
   </form>
 </div>
@@ -132,6 +132,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
       if (e.dropped.length) d.appendChild(el('div', 'left', 'Left out for budget: ' + e.dropped.join(', ')));
       add(d);
     },
+    toolError(e) { say = null; add(el('div', 'note err', e.message)); },
     write(e) {
       say = null;
       const d = el('div', 'chg');
@@ -170,7 +171,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
   }
   $('form').addEventListener('submit', ev => { ev.preventDefault(); send(); });
   input.addEventListener('keydown', ev => { if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); send(); } });
-  input.addEventListener('input', () => { input.style.height = ''; input.style.height = Math.min(120, input.scrollHeight) + 'px'; });
+  input.addEventListener('input', () => { input.style.height = ''; input.style.height = Math.min(120, input.scrollHeight) + 'px'; input.style.overflowY = input.scrollHeight > 120 ? 'auto' : 'hidden'; });
   $('stop').addEventListener('click', () => vscode.postMessage({ cmd: 'stop' }));
   $('undo').addEventListener('click', () => vscode.postMessage({ cmd: 'undo' }));
   vscode.postMessage({ cmd: 'ready' });

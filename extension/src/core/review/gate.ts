@@ -22,11 +22,16 @@ export interface ReviewDecision {
  */
 export interface ReviewGate {
   decide(p: Proposal): Promise<ReviewDecision>;
+  /** True once, if this exact command was approved for this run. Commands never run unapproved. */
+  takeCommandApproval(command: string): boolean;
 }
 
 export class AutoAcceptGate implements ReviewGate {
   async decide(p: Proposal): Promise<ReviewDecision> {
     return { accepted: p.hunks.map(h => h.index) };
+  }
+  takeCommandApproval(): boolean {
+    return true;
   }
 }
 

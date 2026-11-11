@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { CommandRunner, type CommandResult } from '../core/command/run';
 import { toLf, type DirEntry, type EditorHost, type SearchHit } from '../core/host';
 import { ripgrep } from '../node/nodeHost';
 
@@ -63,6 +64,30 @@ export class VscodeHost implements EditorHost {
     const edit = new vscode.WorkspaceEdit();
     edit.deleteFile(this.uri(rel), { ignoreIfNotExists: true });
     if (!(await vscode.workspace.applyEdit(edit))) throw new Error(`VS Code refused to delete ${rel}`);
+  }
+
+  private runner?: CommandRunner;
+  private term?: { terminal: vscode.Terminal; write: vscode.EventEmitter<string> };
+
+  /** Commands run as child processes; their output is mirrored into a read-only "Keel" terminal. */
+  async runCommand(command: string, opts?: { timeoutMs?: number }): Promise<CommandResult> {
+    this.runner ??= new CommandRunner(this.root);
+    if (!this.term) {
+      const write = new vscode.EventEmitter<string>();
+      const terminal = vscode.window.createTerminal({ name: 'Keel', pty: { onDidWrite: write.event, open: () => {}, close: () => (this.term = undefined) } });
+      this.term = { terminal, write };
+    }
+    const { terminal, write } = this.term;
+    terminal.show(true);
+    const crlf = (s: string) => s.replace(/\r?\n/g, '\r\n');
+    write.fire(crlf(`\x1b[1m$ ${command}\x1b[0m\n`));
+    const r = await this.runner.run(command, { ...opts, onOutput: chunk => write.fire(crlf(chunk)) });
+    write.fire(crlf(`\x1b[2m(${r.timedOut ? 'timed out' : r.killed ? 'stopped' : `exit ${r.exitCode}`}, ${(r.ms / 1000).toFixed(1)} s)\x1b[0m\n\n`));
+    return r;
+  }
+
+  killCommands(): void {
+    this.runner?.killAll();
   }
 
   log(message: string): void {

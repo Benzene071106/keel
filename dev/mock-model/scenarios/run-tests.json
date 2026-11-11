@@ -1,0 +1,9 @@
+{
+  "description": "run_command policy: an allowlisted test run, a blocked destructive command, and one that needs the user.",
+  "steps": [
+    { "text": "Running the helper tests. ", "tool": "run_command", "args": { "command": "python -m pytest tests/test_helpers.py -q -x", "timeout_s": 120 } },
+    { "tool": "run_command", "args": { "command": "rm -rf build" } },
+    { "tool": "run_command", "args": { "command": "pip list" } },
+    { "text": "The helper tests pass. I did not run the cleanup or pip commands." }
+  ]
+}

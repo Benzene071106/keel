@@ -10,6 +10,7 @@ import { runWithFailover, withInlineFailover } from '../core/trueforge/failover'
 import { runInline } from '../core/inline/runInline';
 import { VscodeHost } from './vscodeHost';
 import { registerInlineEdit } from './inline';
+import { autoDecideCommand } from '../core/command/policy';
 import { KeelPanel, contextEvent, toolSummary } from './panel';
 
 let mcp: RunningMcpServer | undefined;
@@ -32,6 +33,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const reviewer = new EditorReviewer();
   context.subscriptions.push(reviewer);
   const ledger = new DecisionLedger(host, reviewer, {
+    autoDecide: autoDecideCommand,
     ask: async cmd => {
       const pick = await vscode.window.showWarningMessage(`Keel wants to run: ${cmd}`, { modal: true }, 'Run');
       return pick === 'Run' ? { status: 'allow' } : { status: 'deny', reason: 'The user declined to run this command.' };
@@ -68,6 +70,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onToolCall: (name, args) => {
           panel.post({ type: 'tool', name, summary: toolSummary(name, args) });
           out.appendLine(`\n▸ ${name} ${JSON.stringify(args).slice(0, 200)}`);
+        },
+        onToolError: message => {
+          panel.post({ type: 'toolError', message });
+          out.appendLine(`  ✗ ${message}`);
+        },
+        onCommand: (c, r) => {
+          panel.post({ type: 'tool', name: r.timedOut ? 'timed out' : `exit ${r.exitCode}`, summary: `${c} (${(r.ms / 1000).toFixed(1)} s)` });
+          out.appendLine(`  exit ${r.exitCode}${r.timedOut ? ' (timed out)' : ''} in ${r.ms} ms`);
         },
         onFileWritten: (p, ok, rej) => {
           panel.post({ type: 'write', path: p, applied: ok.length, rejected: rej.length });
@@ -126,7 +136,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 panel.post({ type: 'text', chunk: t });
               }
             },
-            onApproval: calls => ledger.onApproval(calls),
+            onApproval: async calls => {
+              const answers = await ledger.onApproval(calls);
+              answers.forEach((a, i) => {
+                if (a.status !== 'deny') return;
+                const what = calls[i].toolName === 'run_command' ? `Command not run: ${(calls[i].args as { command?: string })?.command ?? ''}` : `${calls[i].toolName} not applied`;
+                panel.post({ type: 'toolError', message: `${what}. ${a.reason ?? ''}` });
+              });
+              return answers;
+            },
           },
           () => stopRequested,
           {
@@ -185,6 +203,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       stopRequested = true;
       ledger.cancel();
       reviewer.cancelAll();
+      host.killCommands();
       if (currentSessionId) await client.sessions.cancel(currentSessionId);
     }),
     vscode.commands.registerCommand('keel.run.undo', async () => {

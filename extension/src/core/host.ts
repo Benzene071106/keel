@@ -27,6 +27,10 @@ export interface EditorHost {
   createFile(relPath: string, text: string): Promise<void>;
   /** Delete a file (used only to undo a file the agent created). */
   deleteFile?(relPath: string): Promise<void>;
+  /** Run a shell command in the workspace root. Absent on hosts that cannot run commands. */
+  runCommand?(command: string, opts?: { timeoutMs?: number }): Promise<import('./command/run').CommandResult>;
+  /** Kill every command still running (Stop). */
+  killCommands?(): void;
   log(message: string): void;
 }
 

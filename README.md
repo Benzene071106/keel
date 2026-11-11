@@ -109,6 +109,20 @@ npx tsx src/node/headless.ts --root ../flask --model mock/midrun-fail --fallback
 npx tsx src/node/headless.ts --root ../flask --model mock/flaky --fallback-model mock/resume "..."
 ```
 
+## Running commands
+
+`run_command` lets the agent run the tests it wrote. Every command passes three checks:
+
+| Class | Examples | What happens |
+| --- | --- | --- |
+| Allowlist | `pytest`, `python -m pytest`, `git status/diff/log`, `npm test`, `tsc`, `ruff` | Runs at once |
+| Everything else | `pip install x`, `make docs` | You are asked first |
+| Blocklist | `rm -rf`, `sudo`, `git push`, `git reset --hard`, `curl ... \| sh`, anything touching `.ssh` / `.env` | Never runs |
+
+A command with `;`, `&&`, `|`, `$(...)` or redirection is never treated as allowlisted. The MCP tool only
+executes a command that was approved for this run (fail closed). Output streams into a "Keel" terminal,
+the model gets the last 12k characters and the exit code, and Stop kills the whole process tree.
+
 ## Cancellation guarantee
 
 Stop (`Keel: Stop`, or Esc during inline edit) calls TrueForge `sessions.cancel`, rejects any open review,

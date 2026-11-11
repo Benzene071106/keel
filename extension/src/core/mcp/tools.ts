@@ -4,9 +4,13 @@ import { safeRelPath, type EditorHost } from '../host';
 import { applyHunks, renderHunk } from '../review/hunks';
 import type { ReviewGate } from '../review/gate';
 import { buildProposal } from '../review/proposal';
+import { classifyCommand } from '../command/policy';
 
 /** Hooks the UI listens to (timeline, ledger). All optional. */
 export interface ToolEvents {
+  /** A tool call that returned an error to the model. */
+  onToolError?(message: string): void;
+  onCommand?(command: string, result: { exitCode: number | null; timedOut: boolean; ms: number }): void;
   onToolCall?(name: string, args: unknown): void;
   onFileWritten?(path: string, appliedHunks: number[], rejectedHunks: number[]): void;
 }
@@ -16,12 +20,17 @@ const MAX_READ_LINES = 400;
 function text(s: string) {
   return { content: [{ type: 'text' as const, text: s }] };
 }
-function fail(s: string) {
+function failResult(s: string) {
   return { content: [{ type: 'text' as const, text: s }], isError: true };
 }
 
 export function registerTools(server: McpServer, host: EditorHost, gate: ReviewGate, events: ToolEvents = {}): void {
   const root = host.root;
+  // Every failed call is reported, so the UI never shows a silent no-op.
+  const fail = (s: string) => {
+    events.onToolError?.(s);
+    return failResult(s);
+  };
 
   server.registerTool(
     'read_file',
@@ -97,7 +106,10 @@ export function registerTools(server: McpServer, host: EditorHost, gate: ReviewG
     const built = await buildProposal(host, tool, args);
     if (!built.ok) return fail(`Edit not applied: ${built.error}`);
     const p = built.proposal;
-    if (p.newText === p.oldText && tool === 'propose_edit') return text(`No change: the edits leave ${p.path} identical.`);
+    if (p.newText === p.oldText && tool === 'propose_edit') {
+      events.onToolError?.(`No change: the edits leave ${p.path} identical.`);
+      return text(`No change: the edits leave ${p.path} identical.`);
+    }
     const decision = await gate.decide(p);
     const accepted = new Set(decision.accepted);
     const rejected = p.hunks.map(h => h.index).filter(i => !accepted.has(i));
@@ -151,6 +163,34 @@ export function registerTools(server: McpServer, host: EditorHost, gate: ReviewG
     async args => {
       events.onToolCall?.('create_file', args);
       return reviewAndWrite('create_file', args);
+    },
+  );
+
+  server.registerTool(
+    'run_command',
+    {
+      description:
+        'Run a shell command in the workspace root and return its exit code and output (last 12k characters). Use it to run the tests you wrote or changed, e.g. "python -m pytest tests/test_cli.py -q". Test runners and read-only git commands run at once; anything else asks the user; destructive commands are refused.',
+      inputSchema: {
+        command: z.string().describe('One command. No chaining with ; && | or redirection unless it is really needed.'),
+        timeout_s: z.number().int().min(1).max(600).default(120),
+      },
+    },
+    async args => {
+      events.onToolCall?.('run_command', args);
+      if (!host.runCommand) return fail('This workspace cannot run commands.');
+      const blocked = classifyCommand(args.command);
+      if (blocked.class === 'blocked') return fail(`Not run: ${blocked.reason}.`);
+      // Fail closed: only a command the user (or the allowlist) approved for this run may execute.
+      if (!gate.takeCommandApproval(args.command)) return fail('Not run: this command was not approved.');
+      try {
+        const r = await host.runCommand(args.command, { timeoutMs: args.timeout_s * 1000 });
+        events.onCommand?.(args.command, r);
+        const status = r.timedOut ? `timed out after ${args.timeout_s} s` : r.killed ? 'stopped by the user' : `exit code ${r.exitCode}`;
+        return text(`$ ${args.command}\n(${status}, ${(r.ms / 1000).toFixed(1)} s)\n${r.output || '(no output)'}`);
+      } catch (e) {
+        return fail(String((e as Error).message ?? e));
+      }
     },
   );
 }

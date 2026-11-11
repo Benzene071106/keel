@@ -52,6 +52,13 @@ export class JournaledHost implements EditorHost {
   log(m: string) {
     this.inner.log(m);
   }
+  runCommand(command: string, opts?: { timeoutMs?: number }) {
+    if (!this.inner.runCommand) throw new Error('This host cannot run commands.');
+    return this.inner.runCommand(command, opts);
+  }
+  killCommands() {
+    this.inner.killCommands?.();
+  }
 
   async writeText(rel: string, text: string) {
     if (!this.checkpoints.has(rel)) this.checkpoints.set(rel, { path: rel, pre: await this.inner.readText(rel), post: text });

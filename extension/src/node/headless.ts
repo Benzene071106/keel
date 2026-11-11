@@ -9,6 +9,7 @@ import { NodeHost } from './nodeHost';
 import { startMcpServer } from '../core/mcp/server';
 import { ContextService } from '../core/context/service';
 import { gitIndexSources } from './indexSources';
+import { autoDecideCommand } from '../core/command/policy';
 import { DecisionLedger, type Reviewer } from '../core/review/ledger';
 import { JournaledHost } from '../core/review/journal';
 import { createClient, registerMcpServer } from '../core/trueforge/client';
@@ -47,7 +48,11 @@ async function main() {
     },
   };
   const host = new JournaledHost(new NodeHost(root, m => console.error(`[host] ${m}`)));
-  const ledger = new DecisionLedger(host, reviewer, { autoDecide: () => ({ status: 'allow' }) });
+  // Allowlisted commands run; others are denied unless --allow-commands is passed. Blocked ones never run.
+  const ledger = new DecisionLedger(host, reviewer, {
+    autoDecide: autoDecideCommand,
+    ask: async () => (process.argv.includes('--allow-commands') ? { status: 'allow' } : { status: 'deny', reason: 'The user declined to run this command.' }),
+  });
   host.beginRun();
   ledger.begin();
   const mcp = await startMcpServer({
@@ -57,6 +62,8 @@ async function main() {
     events: {
       onContextPack: p =>
         console.log(`[context] ${p.items.length} files, ${p.used}/${p.budget} tokens, ${p.ms} ms\n` + p.items.map(i => `  ${i.score.toFixed(2)} ${i.path} (${i.granularity}): ${i.reasons[0] ?? ''}`).join('\n')),
+      onToolError: m => console.log(`[tool error] ${m}`),
+      onCommand: (c, r) => console.log(`[command] ${c} -> exit ${r.exitCode}${r.timedOut ? ' (timed out)' : ''} in ${r.ms} ms`),
       onToolCall: (n, a) => console.log(`\n[tool] ${n} ${JSON.stringify(a).slice(0, 160)}`),
       onFileWritten: (p, ok, rej) => console.log(`[write] ${p} applied=${ok.map(i => i + 1)} rejected=${rej.map(i => i + 1)}`),
     },
@@ -70,7 +77,7 @@ async function main() {
     spec: {
       model: { name: m },
       instructions: 'You are Keel, a coding agent. Read before you write. Edit with propose_edit.',
-      mcp_servers: [{ name: mcpName, preload: true, require_approval_for_tools: ['propose_edit', 'create_file'] }],
+      mcp_servers: [{ name: mcpName, preload: true, require_approval_for_tools: ['propose_edit', 'create_file', 'run_command'] }],
       config: { iteration_limit: 30 },
     },
   });
@@ -90,6 +97,7 @@ async function main() {
     setTimeout(() => {
       stopped = true;
       ledger.cancel();
+      host.killCommands();
       console.log(`\n[keel] STOP after ${cancelAfter} ms`);
       if (sessionId) void client.sessions.cancel(sessionId);
     }, cancelAfter);

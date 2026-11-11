@@ -36,19 +36,30 @@ export class DecisionLedger implements ReviewGate {
     private readonly commands: CommandPolicy = {},
   ) {}
 
+  private approvedCommands: string[] = [];
+
   /** Start a new user request. */
   begin(): void {
     this.decisions.clear();
+    this.approvedCommands = [];
     this.cancelled = false;
   }
 
   cancel(): void {
     this.cancelled = true;
     this.decisions.clear();
+    this.approvedCommands = [];
   }
 
   get isCancelled(): boolean {
     return this.cancelled;
+  }
+
+  takeCommandApproval(command: string): boolean {
+    const i = this.cancelled ? -1 : this.approvedCommands.indexOf(command);
+    if (i < 0) return false;
+    this.approvedCommands.splice(i, 1);
+    return true;
   }
 
   async decide(p: Proposal): Promise<ReviewDecision> {
@@ -78,7 +89,10 @@ export class DecisionLedger implements ReviewGate {
         }
       } else if (c.toolName === 'run_command') {
         const cmd = String((c.args as { command?: string })?.command ?? '');
-        answers[i] = this.commands.autoDecide?.(cmd) ?? (this.commands.ask ? await this.commands.ask(cmd) : { status: 'deny', reason: 'Command not allowed.' });
+        answers[i] = this.cancelled
+          ? { status: 'deny', reason: 'The run was cancelled by the user.' }
+          : (this.commands.autoDecide?.(cmd) ?? (this.commands.ask ? await this.commands.ask(cmd) : { status: 'deny', reason: 'Command not allowed.' }));
+        if (answers[i].status === 'allow') this.approvedCommands.push(cmd);
       } else {
         answers[i] = { status: 'allow' };
       }

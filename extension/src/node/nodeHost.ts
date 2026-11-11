@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { CommandRunner } from '../core/command/run';
 import { toLf, usesCrlf, withEol, type DirEntry, type EditorHost, type SearchHit } from '../core/host';
 
 /** Plain-filesystem EditorHost for headless runs and tests. */
@@ -40,6 +41,14 @@ export class NodeHost implements EditorHost {
   }
   async deleteFile(rel: string) {
     await fs.unlink(this.abs(rel));
+  }
+  private runner?: CommandRunner;
+  runCommand(command: string, opts?: { timeoutMs?: number }) {
+    this.runner ??= new CommandRunner(this.root);
+    return this.runner.run(command, opts);
+  }
+  killCommands() {
+    this.runner?.killAll();
   }
   log(m: string) {
     this.logger(m);
