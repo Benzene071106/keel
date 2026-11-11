@@ -61,3 +61,22 @@ describe('CommandRunner', () => {
     expect(r.ms).toBeLessThan(5000);
   });
 });
+
+import { globToRegExp, jsSearch, ripgrep } from '../../src/node/nodeHost';
+describe('search without ripgrep', () => {
+  it('translates globs the way rg does', () => {
+    expect(globToRegExp('*.py').test('src/flask/helpers.py')).toBe(true);
+    expect(globToRegExp('*.py').test('docs/cli.rst')).toBe(false);
+    expect(globToRegExp('docs/**').test('docs/tutorial/x.rst')).toBe(true);
+    expect(globToRegExp('src/**/*.ts').test('src/a/b/c.ts')).toBe(true);
+    expect(globToRegExp('src/**/*.ts').test('src/c.ts')).toBe(true);
+    expect(globToRegExp('*.{ts,js}').test('a/b.js')).toBe(true);
+  });
+  it('finds matches in-process, and ripgrep() falls back to it when rg is missing', async () => {
+    const root = process.cwd();
+    const direct = await jsSearch(root, '^export function globToRegExp', { glob: '*.ts' });
+    expect(direct).toEqual([expect.objectContaining({ path: 'src/node/nodeHost.ts' })]);
+    const viaFallback = await ripgrep(root, '^export function globToRegExp', { glob: '*.ts', rgPath: '/no/such/rg' });
+    expect(viaFallback.map(h => h.path)).toEqual(['src/node/nodeHost.ts']);
+  });
+});

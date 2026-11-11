@@ -100,7 +100,15 @@ function bundledRipgrep(): string | undefined {
   const path = require('node:path') as typeof import('node:path');
   const fs = require('node:fs') as typeof import('node:fs');
   const exe = process.platform === 'win32' ? 'rg.exe' : 'rg';
-  for (const dir of ['node_modules/@vscode/ripgrep/bin', 'node_modules.asar.unpacked/@vscode/ripgrep/bin']) {
+  // The location has moved between VS Code versions; if none exists, search falls back to an in-process scan.
+  for (const dir of [
+    'node_modules/@vscode/ripgrep/bin',
+    'node_modules.asar.unpacked/@vscode/ripgrep/bin',
+    'node_modules/@vscode/ripgrep-universal/bin',
+    'node_modules.asar.unpacked/@vscode/ripgrep-universal/bin',
+    'node_modules/vscode-ripgrep/bin',
+    'node_modules.asar.unpacked/vscode-ripgrep/bin',
+  ]) {
     const p = path.join(vscode.env.appRoot, dir, exe);
     if (fs.existsSync(p)) return p;
   }

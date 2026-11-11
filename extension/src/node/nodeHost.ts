@@ -62,6 +62,8 @@ export function ripgrep(root: string, pattern: string, opts: { glob?: string; ma
   args.push('.');
   return new Promise((resolve, reject) => {
     execFile(opts.rgPath ?? 'rg', args, { cwd: root, maxBuffer: 32 * 1024 * 1024 }, (err, stdout) => {
+      // No ripgrep on this machine (common on Windows): search in-process instead of failing.
+      if (err && (err as { code?: unknown }).code === 'ENOENT') return jsSearch(root, pattern, opts).then(resolve, reject);
       // rg exits 1 when there are no matches.
       if (err && (err as { code?: unknown }).code !== 1 && !stdout) return reject(err);
       const hits: SearchHit[] = [];
@@ -70,7 +72,8 @@ export function ripgrep(root: string, pattern: string, opts: { glob?: string; ma
         const ev = JSON.parse(line);
         if (ev.type !== 'match') continue;
         hits.push({
-          path: String(ev.data.path.text).replace(/^\.\//, ''),
+          // rg prints .\src\x.py on Windows; tools use forward slashes everywhere.
+          path: String(ev.data.path.text).replace(/\\/g, '/').replace(/^\.\//, ''),
           line: ev.data.line_number,
           text: ev.data.lines.text ?? '',
         });
@@ -78,4 +81,85 @@ export function ripgrep(root: string, pattern: string, opts: { glob?: string; ma
       resolve(hits);
     });
   });
+}
+
+/** "*.py", "docs/**", "src/**\/*.ts" -> RegExp over forward-slash relative paths. A glob without "/" matches at any depth, like rg. */
+export function globToRegExp(glob: string): RegExp {
+  let g = glob.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!g.includes('/')) g = `**/${g}`;
+  if (g.endsWith('/')) g += '**';
+  let re = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*' && g[i + 1] === '*') {
+      if (g[i + 2] === '/') {
+        re += '(?:.*/)?';
+        i += 2;
+      } else {
+        re += '.*';
+        i += 1;
+      }
+    } else if (c === '*') re += '[^/]*';
+    else if (c === '?') re += '[^/]';
+    else if (c === '{') re += '(?:';
+    else if (c === '}') re += ')';
+    else if (c === ',') re += '|';
+    else re += c.replace(/[.+^$()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`);
+}
+
+const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build', '.tox', '.mypy_cache', '.pytest_cache']);
+
+async function listFiles(root: string): Promise<string[]> {
+  const tracked = await new Promise<string[] | null>(res =>
+    execFile('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, maxBuffer: 64 * 1024 * 1024 }, (err, out) => res(err ? null : out.split('\0').filter(Boolean))),
+  );
+  if (tracked) return tracked;
+  const out: string[] = [];
+  const walk = async (rel: string) => {
+    for (const e of await fs.readdir(path.join(root, rel), { withFileTypes: true })) {
+      const p = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) {
+        if (!SKIP_DIRS.has(e.name)) await walk(p);
+      } else if (e.isFile()) out.push(p);
+    }
+  };
+  await walk('');
+  return out;
+}
+
+/** ripgrep stand-in: same result shape, JavaScript regex, tracked + untracked-not-ignored files. */
+export async function jsSearch(root: string, pattern: string, opts: { glob?: string; maxResults?: number } = {}): Promise<SearchHit[]> {
+  const max = opts.maxResults ?? 50;
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern);
+  } catch (e) {
+    throw new Error(`Invalid regular expression: ${(e as Error).message}`);
+  }
+  const glob = opts.glob ? globToRegExp(opts.glob) : null;
+  const hits: SearchHit[] = [];
+  for (const rel of (await listFiles(root)).sort()) {
+    if (hits.length >= max) break;
+    if (glob && !glob.test(rel)) continue;
+    let text: string;
+    try {
+      const stat = await fs.stat(path.join(root, rel));
+      if (stat.size > 1_000_000) continue;
+      text = await fs.readFile(path.join(root, rel), 'utf8');
+    } catch {
+      continue;
+    }
+    if (text.includes('\u0000')) continue;
+    const lines = text.split(/\r?\n/);
+    let perFile = 0;
+    for (let i = 0; i < lines.length && hits.length < max && perFile < 20; i++) {
+      if (re.test(lines[i])) {
+        hits.push({ path: rel, line: i + 1, text: lines[i].slice(0, 300) });
+        perFile++;
+      }
+    }
+  }
+  return hits;
 }
