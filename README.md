@@ -45,6 +45,15 @@ timeline, the Context Ledger, changed files, Stop and Undo run. A raw log goes t
 
 No debugger needed: `code --extensionDevelopmentPath=/path/to/keel/extension /path/to/flask` does the same as F5.
 
+### Install as a normal extension
+
+```bash
+cd extension && npm install && npm run package     # writes extension/keel.vsix
+code --install-extension keel.vsix
+```
+
+Then open any repository in VS Code and click the Keel icon in the activity bar.
+
 ### Inline edit
 
 Select code, press **Ctrl+Alt+K** (Cmd+Alt+K on macOS), type an instruction. Tokens stream into a preview

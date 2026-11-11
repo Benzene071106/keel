@@ -6,3 +6,4 @@ out/
 .env
 .vscode-test/
 mock-model.log
+extension/keel.vsix
