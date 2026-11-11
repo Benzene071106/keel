@@ -1,0 +1,20 @@
+{
+  "description": "Walking-skeleton check: find get_debug_flag, read it, and edit it through propose_edit.",
+  "steps": [
+    { "tool": "search_code", "args": { "pattern": "def get_debug_flag", "glob": "*.py" } },
+    { "tool": "read_file", "args": { "path": "src/flask/helpers.py", "start_line": 20, "end_line": 40 } },
+    {
+      "tool": "propose_edit",
+      "args": {
+        "path": "src/flask/helpers.py",
+        "edits": [
+          {
+            "old_str": "    \"\"\"Get whether debug mode should be enabled for the app, indicated by the\n    :envvar:`FLASK_DEBUG` environment variable. The default is ``False``.\n    \"\"\"\n    val = os.environ.get(\"FLASK_DEBUG\")\n    return bool(val and val.lower() not in {\"0\", \"false\", \"no\"})",
+            "new_str": "    \"\"\"Get whether debug mode should be enabled for the app, indicated by the\n    :envvar:`FLASK_DEBUG` environment variable. The default is ``False``.\n\n    These values (case-insensitive) are treated as false: ``0``, ``false``,\n    ``no``, ``off``, ``n``. Any other non-empty value enables debug mode.\n    \"\"\"\n    val = os.environ.get(\"FLASK_DEBUG\")\n    return bool(val and val.lower() not in {\"0\", \"false\", \"no\", \"off\", \"n\"})"
+          }
+        ]
+      }
+    },
+    { "text": "Updated get_debug_flag so 'off' and 'n' (any case) are treated as false, and listed every false value in the docstring." }
+  ]
+}

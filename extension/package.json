@@ -1,0 +1,96 @@
+{
+  "name": "keel",
+  "displayName": "Keel",
+  "description": "A coding agent on TrueForge that knows which files move together.",
+  "version": "0.0.1",
+  "publisher": "keel-team",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "keel.agent.run",
+        "title": "Keel: Run Agent Task"
+      },
+      {
+        "command": "keel.agent.stop",
+        "title": "Keel: Stop"
+      },
+      {
+        "command": "keel.inline.edit",
+        "title": "Keel: Inline Edit"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "keel.inline.edit",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Keel",
+      "properties": {
+        "keel.trueforgeUrl": {
+          "type": "string",
+          "default": "http://localhost:8790",
+          "description": "TrueForge server URL."
+        },
+        "keel.agent": {
+          "type": "string",
+          "default": "keel-agent",
+          "description": "Primary TrueForge agent for agent mode."
+        },
+        "keel.fallbackAgent": {
+          "type": "string",
+          "default": "keel-agent-fallback",
+          "description": "Agent used automatically when the primary model fails."
+        },
+        "keel.inlineAgent": {
+          "type": "string",
+          "default": "keel-inline",
+          "description": "Primary TrueForge agent for inline edits."
+        },
+        "keel.inlineFallbackAgent": {
+          "type": "string",
+          "default": "keel-inline-fallback",
+          "description": "Fallback agent for inline edits."
+        },
+        "keel.mcpServerName": {
+          "type": "string",
+          "default": "keel-editor",
+          "description": "Name under which Keel registers its MCP server in TrueForge."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/diff": "^6.0.0",
+    "@types/express": "^4.17.25",
+    "@types/node": "^22.20.5",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@truefoundry/trueforge-sdk": "^0.184.1",
+    "diff": "^7.0.0",
+    "express": "^4.22.3",
+    "zod": "^3.25.76"
+  }
+}
