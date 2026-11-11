@@ -288,6 +288,7 @@ export function renderPack(p: ContextPack): string {
       return `\n### ${i + 1}. ${it.path} [${it.role}] ${where}\nWhy: ${it.reasons.join('; ')}\n${it.content ? '```\n' + it.content + '\n```' : ''}`;
     })
     .join('\n');
-  const tail = p.dropped.length ? `\n\nAlso relevant but left out for budget: ${p.dropped.map(d => d.path).join(', ')}` : '';
+  const over = p.dropped.filter(d => d.reason !== 'weak match');
+  const tail = over.length ? `\n\nAlso relevant but left out for budget: ${over.map(d => d.path).join(', ')}` : '';
   return head + body + tail;
 }

@@ -129,7 +129,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
         f.appendChild(ul);
         d.appendChild(f);
       }
-      if (e.dropped.length) d.appendChild(el('div', 'left', 'Left out for budget: ' + e.dropped.join(', ')));
+      if (e.dropped.length) d.appendChild(el('div', 'left', 'Left out: ' + e.dropped.join(', ')));
       add(d);
     },
     toolError(e) { say = null; add(el('div', 'note err', e.message)); },

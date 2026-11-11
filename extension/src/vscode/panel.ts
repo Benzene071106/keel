@@ -30,7 +30,7 @@ export const contextEvent = (p: ContextPack): PanelEvent => ({
   used: p.used,
   budget: p.budget,
   ms: p.ms,
-  dropped: p.dropped.map(d => d.path),
+  dropped: p.dropped.map(d => `${d.path}${d.reason === 'weak match' ? ' (weak match)' : ''}`),
   items: p.items.map(i => ({ path: i.path, line: i.ranges[0]?.[0], role: i.role, granularity: i.granularity, tokens: i.tokens, reasons: i.reasons })),
 });
 
