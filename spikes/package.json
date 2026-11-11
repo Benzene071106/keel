@@ -1,0 +1,19 @@
+{
+  "name": "spikes",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@truefoundry/trueforge-sdk": "^0.184.1",
+    "express": "^4.22.3",
+    "zod": "^3.25.76"
+  },
+  "type": "module"
+}
