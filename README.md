@@ -4,8 +4,8 @@ A VS Code coding agent whose agent loop runs on [TrueForge](https://github.com/t
 Keel's editor (read, search, propose edits) is exposed to the agent as MCP tools; every write is
 gated by TrueForge tool approval and reviewed hunk by hunk.
 
-> Status: build steps 1-5 done (TrueForge loop, MCP tools, approval-driven per-hunk review, run journal
-> and undo). Inline edit, context engine and model fallback are next. Starting point: **from scratch**
+> Status: build steps 1-6 done (TrueForge loop, MCP tools, approval-driven per-hunk review, run journal
+> and undo, inline edit). Context engine and model fallback are next. Starting point: **from scratch**
 > (no upstream fork).
 
 ## How review works
@@ -42,6 +42,12 @@ cd extension && npm install && npm run build
 In the Extension Development Host, open a repository (e.g. Flask at tag 3.1.3) and run
 **Keel: Run Agent Task**. Output streams to the "Keel" output channel.
 
+### Inline edit
+
+Select code, press **Ctrl+Alt+K** (Cmd+Alt+K on macOS), type an instruction. Tokens stream into a preview
+beside the editor (Esc cancels; nothing is changed). The proposal then opens in the per-hunk review.
+Runs on the `keel-inline` TrueForge agent.
+
 ### Headless run (no VS Code)
 
 Runs the same MCP server and turn loop against a folder on disk:
@@ -49,7 +55,10 @@ Runs the same MCP server and turn loop against a folder on disk:
 ```bash
 cd extension
 npx tsx src/node/headless.ts --root /path/to/flask --agent keel-agent "Treat 'off' and 'n' as false"
+npx tsx src/node/headlessInline.ts --root /path/to/flask --file src/flask/helpers.py --lines 28-33 "instruction"
 ```
+
+With the mock model, pick scenarios per agent: `KEEL_PRIMARY_MODEL=mock/edit-helpers KEEL_MODEL_KEEL_INLINE=mock/inline-debug-flag node scripts/sync-agents.mjs`.
 
 ## Layout
 

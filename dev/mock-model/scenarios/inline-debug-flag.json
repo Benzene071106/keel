@@ -1,0 +1,8 @@
+{
+  "description": "Task A inline edit: the reply a good model gives for the get_debug_flag instruction.",
+  "steps": [
+    {
+      "text": "```python\ndef get_debug_flag() -> bool:\n    \"\"\"Get whether debug mode should be enabled for the app, indicated by the\n    :envvar:`FLASK_DEBUG` environment variable. The default is ``False``.\n\n    The following values are treated as false, case-insensitively:\n    ``0``, ``false``, ``no``, ``off``, ``n``. Any other non-empty value\n    enables debug mode.\n    \"\"\"\n    val = os.environ.get(\"FLASK_DEBUG\")\n    return bool(val and val.lower() not in {\"0\", \"false\", \"no\", \"off\", \"n\"})\n```"
+    }
+  ]
+}

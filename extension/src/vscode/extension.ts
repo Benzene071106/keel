@@ -6,6 +6,7 @@ import { EditorReviewer } from './review';
 import { createClient, registerMcpServer } from '../core/trueforge/client';
 import { runRequest } from '../core/trueforge/turnRunner';
 import { VscodeHost } from './vscodeHost';
+import { registerInlineEdit } from './inline';
 
 let mcp: RunningMcpServer | undefined;
 let currentSessionId: string | undefined;
@@ -50,6 +51,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     out.appendLine(`Keel could not connect to TrueForge: ${String(err.message ?? err)}`);
     void vscode.window.showErrorMessage(`Keel: ${String(err.message ?? err)}`);
   });
+
+  registerInlineEdit(context, { client, host, reviewer, out, agentName: () => cfg<string>('inlineAgent') });
 
   context.subscriptions.push(
     { dispose: () => void mcp?.close() },

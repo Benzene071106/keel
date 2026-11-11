@@ -42,7 +42,11 @@ if (mcpRes.status === 404) {
 const { data: existing = [] } = await http('GET', '/api/v1/agents?limit=100');
 for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
   const raw = fs.readFileSync(path.join(dir, file), 'utf8');
-  for (const [suffix, model] of [['', primary], ['-fallback', fallback]]) {
+  // Per-agent override, e.g. KEEL_MODEL_KEEL_INLINE / KEEL_MODEL_KEEL_INLINE_FALLBACK (used for scripted mock tests).
+  const envKey = `KEEL_MODEL_${JSON.parse(raw).name.toUpperCase().replace(/-/g, '_')}`;
+  const p = process.env[envKey] ?? primary;
+  const f = process.env[`${envKey}_FALLBACK`] ?? (process.env[envKey] ? p : fallback);
+  for (const [suffix, model] of [['', p], ['-fallback', f]]) {
     const def = JSON.parse(raw.replaceAll('${KEEL_PRIMARY_MODEL}', model));
     def.name += suffix;
     const found = existing.find(a => a.name === def.name);

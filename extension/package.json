@@ -33,6 +33,10 @@
       {
         "command": "keel.review.done",
         "title": "Keel: Done Reviewing This File"
+      },
+      {
+        "command": "keel.inline.cancel",
+        "title": "Keel: Cancel Inline Edit"
       }
     ],
     "keybindings": [
@@ -47,6 +51,11 @@
         "key": "ctrl+enter",
         "mac": "cmd+enter",
         "when": "resourceScheme == keel-review"
+      },
+      {
+        "command": "keel.inline.cancel",
+        "key": "escape",
+        "when": "keel.inlineRunning"
       }
     ],
     "configuration": {
