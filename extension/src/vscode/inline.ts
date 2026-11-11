@@ -3,7 +3,7 @@ import type { TrueForge } from '@truefoundry/trueforge-sdk';
 import { runInline, type InlineResult } from '../core/inline/runInline';
 import type { InlineRequest } from '../core/inline/inline';
 import { applyHunks, computeHunks } from '../core/review/hunks';
-import type { EditorHost } from '../core/host';
+import { toLf, type EditorHost } from '../core/host';
 import type { EditorReviewer } from './review';
 
 const STREAM_SCHEME = 'keel-stream';
@@ -74,7 +74,7 @@ export function registerInlineEdit(context: vscode.ExtensionContext, deps: Inlin
       if (!instruction) return;
 
       const rel = vscode.workspace.asRelativePath(doc.uri, false);
-      const fileText = doc.getText();
+      const fileText = toLf(doc.getText());
       const version = doc.version;
       const req: InlineRequest = { path: rel, languageId: doc.languageId, fileText, startLine, endLine, instruction };
 
@@ -134,7 +134,7 @@ export function registerInlineEdit(context: vscode.ExtensionContext, deps: Inlin
         void vscode.window.showInformationMessage('Keel: all hunks rejected. No changes were made.');
         return;
       }
-      if (doc.getText() !== fileText) {
+      if (toLf(doc.getText()) !== fileText) {
         void vscode.window.showWarningMessage('Keel: the file changed during review; not applying. No changes were made.');
         return;
       }

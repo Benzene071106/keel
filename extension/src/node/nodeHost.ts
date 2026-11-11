@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import type { DirEntry, EditorHost, SearchHit } from '../core/host';
+import { toLf, usesCrlf, withEol, type DirEntry, type EditorHost, type SearchHit } from '../core/host';
 
 /** Plain-filesystem EditorHost for headless runs and tests. */
 export class NodeHost implements EditorHost {
@@ -11,7 +11,7 @@ export class NodeHost implements EditorHost {
     return path.join(this.root, rel);
   }
   async readText(rel: string) {
-    return fs.readFile(this.abs(rel), 'utf8');
+    return toLf(await fs.readFile(this.abs(rel), 'utf8'));
   }
   async exists(rel: string) {
     return fs.access(this.abs(rel)).then(() => true, () => false);
@@ -29,7 +29,9 @@ export class NodeHost implements EditorHost {
   async writeText(rel: string, text: string) {
     // Write-then-rename so a crash can never leave a half-written file.
     const tmp = `${this.abs(rel)}.keel-tmp-${process.pid}`;
-    await fs.writeFile(tmp, text, 'utf8');
+    // Keep the file's own line endings (CRLF checkouts on Windows).
+    const crlf = usesCrlf(await fs.readFile(this.abs(rel), 'utf8').catch(() => ''));
+    await fs.writeFile(tmp, withEol(text, crlf), 'utf8');
     await fs.rename(tmp, this.abs(rel));
   }
   async createFile(rel: string, text: string) {

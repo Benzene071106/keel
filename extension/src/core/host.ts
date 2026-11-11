@@ -30,6 +30,15 @@ export interface EditorHost {
   log(message: string): void;
 }
 
+/**
+ * Keel works on LF text everywhere (the model writes LF). Hosts convert at the boundary:
+ * reads are normalised to LF, writes go back out in the file's own line ending.
+ * Without this, a CRLF checkout (git on Windows) makes every line look changed.
+ */
+export const toLf = (text: string) => text.replace(/\r\n/g, '\n');
+export const usesCrlf = (text: string) => /\r\n/.test(text);
+export const withEol = (lfText: string, crlf: boolean) => (crlf ? toLf(lfText).replace(/\n/g, '\r\n') : lfText);
+
 /** Resolve a tool-supplied path and refuse anything that escapes the workspace. */
 export function safeRelPath(root: string, relPath: string): string {
   const path = require('node:path') as typeof import('node:path');

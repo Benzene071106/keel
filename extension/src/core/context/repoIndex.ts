@@ -43,7 +43,7 @@ export class RepoIndex {
     await Promise.all(
       paths.map(async p => {
         try {
-          const t = await src.readFile(p);
+          const t = (await src.readFile(p)).replace(/\r\n/g, '\n');
           if (t.length <= MAX_FILE_BYTES && !t.includes('\u0000')) idx.files.set(p, t);
         } catch {
           /* unreadable: skip */

@@ -78,3 +78,16 @@ describe('unified view', () => {
     expect(v.hunks).toEqual([{ index: 0, removed: [0, 0], added: [0, 2] }]);
   });
 });
+
+import { toLf, usesCrlf, withEol } from '../../src/core/host';
+describe('line endings', () => {
+  it('a CRLF file diffs the same as its LF twin and round-trips', () => {
+    const crlf = 'a\r\nb\r\nc\r\n';
+    expect(usesCrlf(crlf)).toBe(true);
+    const hunks = computeHunks(toLf(crlf), 'a\nB\nc\n');
+    expect(hunks).toHaveLength(1);
+    expect(hunks[0].oldLines).toEqual(['b']);
+    expect(withEol('a\nB\nc\n', true)).toBe('a\r\nB\r\nc\r\n');
+    expect(withEol('a\nB\n', false)).toBe('a\nB\n');
+  });
+});

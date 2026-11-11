@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { DirEntry, EditorHost, SearchHit } from '../core/host';
+import { toLf, type DirEntry, type EditorHost, type SearchHit } from '../core/host';
 import { ripgrep } from '../node/nodeHost';
 
 /**
@@ -17,8 +17,9 @@ export class VscodeHost implements EditorHost {
   async readText(rel: string): Promise<string> {
     const uri = this.uri(rel);
     const open = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
-    if (open) return open.getText();
-    return new TextDecoder().decode(await vscode.workspace.fs.readFile(uri));
+    // LF everywhere inside Keel; VS Code converts back to the document's own EOL when the edit is applied.
+    if (open) return toLf(open.getText());
+    return toLf(new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
   }
 
   async exists(rel: string): Promise<boolean> {
