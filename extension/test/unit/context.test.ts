@@ -108,3 +108,19 @@ describe('symbols in docstrings', () => {
     expect(extractSymbols('c.py', src).map(s => s.qualname)).toEqual(['f', 'g']);
   });
 });
+
+describe('contextPack focus', () => {
+  const files: Record<string, string> = {
+    'src/pkg/helpers.py': 'def get_debug_flag():\n    """Debug flag."""\n    return 1\n\n\ndef url_for(x):\n    """Build a URL."""\n    return x\n',
+    'docs/routing.rst': 'Routing\n=======\n\nUse :func:`url_for` to build URLs.\n',
+    'docs/debug.rst': 'Debug\n=====\n\nSee :func:`get_debug_flag`.\n',
+  };
+  it('a mention does not drag in docs about other functions in the same file', async () => {
+    const idx = await RepoIndex.build({ listFiles: async () => Object.keys(files), readFile: async p => files[p], gitLog: async () => '' });
+    const p = contextPack(idx, 'treat off as false', { mentions: ['@get_debug_flag'] });
+    const paths = p.items.map(i => i.path);
+    expect(paths[0]).toBe('src/pkg/helpers.py');
+    expect(paths).toContain('docs/debug.rst');
+    expect(paths).not.toContain('docs/routing.rst');
+  });
+});

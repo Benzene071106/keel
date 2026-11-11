@@ -34,6 +34,8 @@ interface Candidate {
   reasons: string[];
   symbols: Map<string, CodeSymbol>;
   sections: Set<number>;
+  /** Symbols the user named with @; when present they define what the request is about. */
+  mentioned?: Set<string>;
 }
 
 const CHANGELOG = /(^|\/)(CHANGES|CHANGELOG|HISTORY|NEWS)(\.\w+)?$/i;
@@ -108,6 +110,7 @@ export function contextPack(idx: RepoIndex, query: string, opts: { mentions?: st
         const c = cand(s.path);
         c.score += 10;
         c.symbols.set(s.qualname, s);
+        (c.mentioned ??= new Set()).add(s.name);
         c.reasons.unshift(`you mentioned @${name}`);
       }
     }
@@ -123,13 +126,17 @@ export function contextPack(idx: RepoIndex, query: string, opts: { mentions?: st
   };
   const seeds = [...cands.values()].filter(c => !idx.isTest(c.path) && !idx.isDoc(c.path)).sort((a, b) => b.score - a.score).slice(0, 3);
   for (const seed of seeds) {
-    const s = seed.score;
+    // A mention adds +10 so the file itself always makes it in; it must not also inflate everything
+    // reachable from it, or a one-function request drags in every doc that names the module.
+    const s = Math.min(seed.score, 2);
     for (const t of idx.testsFor(seed.path)) {
       const c = cand(t);
       bump(c, 'test', 0.7 * s);
       c.reasons.push(`test file for ${seed.path} (naming convention)`);
     }
-    const seedNames = new Set(idx.symbolsIn(seed.path).map(x => x.name));
+    // Docs count when they reference the symbols this request is about, not any symbol in the file.
+    const focus = seed.mentioned?.size ? [...seed.mentioned] : [...seed.symbols.values()].map(x => x.name);
+    const seedNames = new Set(focus.length ? focus : idx.symbolsIn(seed.path).map(x => x.name));
     for (const [doc, refs] of idx.docRefs) {
       const shared = [...refs].filter(r => seedNames.has(r));
       if (shared.length === 0) continue;
@@ -159,9 +166,16 @@ export function contextPack(idx: RepoIndex, query: string, opts: { mentions?: st
   for (const c of codeTop) refineSymbols(idx, c, qt);
 
   // 4. Pack greedily under the budget, downgrading granularity before dropping.
-  const ranked = [...cands.values()].filter(c => c.score > 0.05).sort((a, b) => b.score - a.score);
+  const dropped0: ContextPack['dropped'] = [];
+  // Relevance floor: a quarter of the strongest evidence (mention boosts capped), so a small request
+  // gets a small pack instead of being padded with one-word matches up to the budget.
+  const ref = Math.max(0, ...[...cands.values()].map(c => Math.min(c.score, 2)));
+  const floor = Math.max(0.05, 0.25 * ref);
+  const ranked = [...cands.values()].filter(c => c.score >= floor).sort((a, b) => b.score - a.score);
+  for (const c of [...cands.values()].filter(c => c.score < floor && c.score > 0.05).sort((a, b) => b.score - a.score).slice(0, 5))
+    dropped0.push({ path: c.path, score: round(c.score), reason: 'weak match' });
   const items: PackItem[] = [];
-  const dropped: ContextPack['dropped'] = [];
+  const dropped: ContextPack['dropped'] = dropped0;
   let used = 0;
   for (const c of ranked) {
     const options = renderOptions(idx, c);
@@ -179,6 +193,8 @@ export function contextPack(idx: RepoIndex, query: string, opts: { mentions?: st
       ...fit,
     });
   }
+  // Budget/item-limit drops first: those are relevant files the model may want to read.
+  dropped.sort((a, b) => (a.reason === 'weak match' ? 1 : 0) - (b.reason === 'weak match' ? 1 : 0));
   return { query, budget, used, items, dropped: dropped.slice(0, 10), ms: Date.now() - t0 };
 }
 
