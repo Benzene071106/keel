@@ -10,6 +10,7 @@ import { runWithFailover, withInlineFailover } from '../core/trueforge/failover'
 import { runInline } from '../core/inline/runInline';
 import { VscodeHost } from './vscodeHost';
 import { registerInlineEdit } from './inline';
+import { KeelPanel, contextEvent, toolSummary } from './panel';
 
 let mcp: RunningMcpServer | undefined;
 let currentSessionId: string | undefined;
@@ -36,6 +37,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return pick === 'Run' ? { status: 'allow' } : { status: 'deny', reason: 'The user declined to run this command.' };
     },
   });
+  const panel = new KeelPanel({
+    run: text => void runTask(text),
+    stop: () => void vscode.commands.executeCommand('keel.agent.stop'),
+    undo: () => void vscode.commands.executeCommand('keel.run.undo'),
+    open: (rel, line) => {
+      const uri = vscode.Uri.joinPath(folder.uri, rel);
+      const pos = new vscode.Position(Math.max(0, (line ?? 1) - 1), 0);
+      void vscode.window.showTextDocument(uri, { selection: new vscode.Range(pos, pos), preview: true });
+    },
+  });
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider(KeelPanel.viewId, panel, { webviewOptions: { retainContextWhenHidden: true } }));
   const baseUrl = cfg<string>('trueforgeUrl');
   const client = createClient(baseUrl);
 
@@ -48,12 +60,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       context: contextService,
       events: {
         onContextPack: p => {
+          panel.post(contextEvent(p));
           out.appendLine(`◆ context pack: ${p.items.length} files, ${p.used}/${p.budget} tokens, ${p.ms} ms`);
           for (const i of p.items) out.appendLine(`   ${i.score.toFixed(2)} ${i.path} [${i.granularity}] ${i.reasons.join('; ')}`);
           if (p.dropped.length) out.appendLine(`   left out: ${p.dropped.map(d => d.path).join(', ')}`);
         },
-        onToolCall: (name, args) => out.appendLine(`\n▸ ${name} ${JSON.stringify(args).slice(0, 200)}`),
-        onFileWritten: (p, ok, rej) => out.appendLine(`✎ ${p}: applied ${ok.length} hunk(s), rejected ${rej.length}`),
+        onToolCall: (name, args) => {
+          panel.post({ type: 'tool', name, summary: toolSummary(name, args) });
+          out.appendLine(`\n▸ ${name} ${JSON.stringify(args).slice(0, 200)}`);
+        },
+        onFileWritten: (p, ok, rej) => {
+          panel.post({ type: 'write', path: p, applied: ok.length, rejected: rej.length });
+          out.appendLine(`✎ ${p}: applied ${ok.length} hunk(s), rejected ${rej.length}`);
+        },
       },
     });
     await registerMcpServer(baseUrl, cfg<string>('mcpServerName'), mcp.url, mcp.token);
@@ -81,14 +100,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ),
   });
 
-  context.subscriptions.push(
-    { dispose: () => void mcp?.close() },
-    vscode.commands.registerCommand('keel.agent.run', async () => {
+  let running = false;
+  async function runTask(request: string): Promise<void> {
+      if (running) {
+        void vscode.window.showInformationMessage('Keel is already running a task. Stop it first.');
+        return;
+      }
+      running = true;
       await ready;
-      const request = await vscode.window.showInputBox({ prompt: 'What should Keel do?', ignoreFocusOut: true });
-      if (!request) return;
-      out.show(true);
       out.appendLine(`\n=== ${request}`);
+      panel.post({ type: 'start', request });
       stopRequested = false;
       modelStatus.backgroundColor = undefined;
       host.beginRun();
@@ -100,7 +121,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           request,
           {
             onText: (t, thread) => {
-              if (!thread || thread === 'main') out.append(t);
+              if (!thread || thread === 'main') {
+                out.append(t);
+                panel.post({ type: 'text', chunk: t });
+              }
             },
             onApproval: calls => ledger.onApproval(calls),
           },
@@ -112,9 +136,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               currentSessionId = id;
               modelStatus.text = `$(hubot) Keel: ${label}`;
               modelStatus.show();
+              panel.post({ type: 'model', label });
             },
-            onRetry: r => out.appendLine(`\n⟳ ${r.target}: transient model error, retry ${r.attempt} in ${r.delayMs} ms (${r.reason})`),
+            onRetry: r => {
+              panel.post({ type: 'retry', ...r });
+              out.appendLine(`\n⟳ ${r.target}: transient model error, retry ${r.attempt} in ${r.delayMs} ms (${r.reason})`);
+            },
             onSwitch: sw => {
+              panel.post({ type: 'switch', from: sw.from, to: sw.to, reason: sw.reason });
               out.appendLine(`\n⇄ switching ${sw.from} → ${sw.to}: ${sw.reason}`);
               modelStatus.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
               void vscode.window.showWarningMessage(`Keel: ${sw.from} failed (${sw.reason}). Continuing on ${sw.to}.`);
@@ -124,19 +153,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (outcome.status === 'error') void vscode.window.showErrorMessage(`Keel: ${outcome.message}`);
         out.appendLine(`\n=== ${outcome.status}${outcome.status === 'error' ? `: ${outcome.message}` : ''}`);
         const touched = host.touched.map(c => c.path);
+        panel.post({ type: 'end', status: outcome.status, message: outcome.status === 'error' ? outcome.message : undefined, changed: touched });
         if (touched.length) out.appendLine(`Changed this run: ${touched.join(', ')}  (Keel: Undo Last Run reverts them)`);
         if (outcome.status === 'cancelled') {
           const msg = touched.length
             ? `Keel stopped. ${touched.length} file(s) were fully updated before Stop; nothing is half-applied.`
             : 'Keel stopped. No files were changed.';
-          const pick = await vscode.window.showInformationMessage(msg, ...(touched.length ? ['Keep', 'Revert run'] : []));
-          if (pick === 'Revert run') await vscode.commands.executeCommand('keel.run.undo');
+          // Not awaited: an unanswered notification must not block the next task.
+          void vscode.window.showInformationMessage(msg, ...(touched.length ? ['Keep', 'Revert run'] : [])).then(pick => {
+            if (pick === 'Revert run') void vscode.commands.executeCommand('keel.run.undo');
+          });
         }
       } catch (err) {
         out.appendLine(`\n=== failed: ${String((err as Error).message ?? err)}`);
+        panel.post({ type: 'end', status: 'error', message: String((err as Error).message ?? err), changed: host.touched.map(c => c.path) });
       } finally {
         currentSessionId = undefined;
+        running = false;
       }
+  }
+
+  context.subscriptions.push(
+    { dispose: () => void mcp?.close() },
+    vscode.commands.registerCommand('keel.agent.run', async () => {
+      const request = await vscode.window.showInputBox({ prompt: 'What should Keel do?', ignoreFocusOut: true });
+      if (!request) return;
+      void vscode.commands.executeCommand(`${KeelPanel.viewId}.focus`);
+      await runTask(request);
     }),
     vscode.commands.registerCommand('keel.agent.stop', async () => {
       stopRequested = true;
@@ -148,6 +191,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const r = await host.revertRun();
       const msg = `Keel: reverted ${r.reverted.length} file(s)${r.skipped.length ? `; left ${r.skipped.join(', ')} alone (edited since)` : ''}.`;
       out.appendLine(msg);
+      panel.post({ type: 'undone', message: msg });
       void vscode.window.showInformationMessage(msg);
     }),
   );

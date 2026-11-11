@@ -32,11 +32,17 @@
       },
       {
         "command": "keel.review.done",
-        "title": "Keel: Done Reviewing This File"
+        "title": "Keel: Apply Accepted Hunks",
+        "icon": "$(check)"
       },
       {
         "command": "keel.inline.cancel",
         "title": "Keel: Cancel Inline Edit"
+      },
+      {
+        "command": "keel.review.rejectFile",
+        "title": "Keel: Reject All Changes to This File",
+        "icon": "$(close)"
       }
     ],
     "keybindings": [
@@ -56,6 +62,11 @@
         "command": "keel.inline.cancel",
         "key": "escape",
         "when": "keel.inlineRunning"
+      },
+      {
+        "command": "keel.panel.focus",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
       }
     ],
     "configuration": {
@@ -94,10 +105,34 @@
       }
     },
     "menus": {
-      "commandPalette": [
+      "editor/title": [
         {
           "command": "keel.review.done",
-          "when": "resourceScheme == keel-review"
+          "when": "resourceScheme == keel-review",
+          "group": "navigation@1"
+        },
+        {
+          "command": "keel.review.rejectFile",
+          "when": "resourceScheme == keel-review",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "keel",
+          "title": "Keel",
+          "icon": "media/keel.svg"
+        }
+      ]
+    },
+    "views": {
+      "keel": [
+        {
+          "type": "webview",
+          "id": "keel.panel",
+          "name": "Agent"
         }
       ]
     }

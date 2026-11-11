@@ -55,7 +55,12 @@ export class EditorReviewer implements Reviewer, vscode.TextDocumentContentProvi
       vscode.window.onDidChangeVisibleTextEditors(() => this.decorateAll()),
       vscode.commands.registerCommand('keel.review.toggle', (key: string, hunk: number, accept: boolean) => this.toggle(key, hunk, accept)),
       vscode.commands.registerCommand('keel.review.all', (key: string, accept: boolean) => this.setAll(key, accept)),
-      vscode.commands.registerCommand('keel.review.done', (key?: string) => this.finish(key ?? this.activeKey())),
+      vscode.commands.registerCommand('keel.review.done', (arg?: unknown) => this.finish(keyOf(arg) ?? this.activeKey())),
+      vscode.commands.registerCommand('keel.review.rejectFile', (arg?: unknown) => {
+        const key = keyOf(arg) ?? this.activeKey();
+        if (key) this.setAll(key, false);
+        this.finish(key);
+      }),
       vscode.commands.registerCommand('keel.review.sideBySide', (key: string) => this.sideBySide(key)),
       this.status,
     );
@@ -87,10 +92,12 @@ export class EditorReviewer implements Reviewer, vscode.TextDocumentContentProvi
   private reviewOne(proposal: Proposal, n: number, total: number): Promise<ReviewDecision> {
     return new Promise(resolve => {
       const view = buildUnifiedView(proposal.oldText, proposal.hunks);
-      const uri = vscode.Uri.from({ scheme: SCHEME, path: `/${proposal.path}`, query: proposal.key });
+      // The path is only the tab label; the query carries the proposal key.
+      const uri = vscode.Uri.from({ scheme: SCHEME, path: `/Review: ${proposal.path.split('/').pop()}`, query: proposal.key });
       const r: OpenReview = { proposal, view, accepted: new Set(proposal.hunks.map(h => h.index)), uri, done: resolve };
       this.reviews.set(proposal.key, r);
-      this.status.text = `$(diff) Keel review ${n}/${total}: ${proposal.path}  $(check) Done`;
+      this.status.text = `$(diff) Keel review ${n}/${total}: ${proposal.path}  $(check) Apply`;
+      this.status.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
       this.status.command = { command: 'keel.review.done', title: 'Done', arguments: [proposal.key] };
       this.status.show();
       void (async () => {
@@ -101,6 +108,21 @@ export class EditorReviewer implements Reviewer, vscode.TextDocumentContentProvi
         const first = view.hunks[0];
         if (first) editor.revealRange(new vscode.Range(first.removed[0], 0, first.added[1], 0), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
         this.decorateAll();
+        // The review is easy to miss as "just a file": say so, with the two whole-file answers.
+        const hunks = proposal.hunks.length;
+        const pick = await vscode.window.showInformationMessage(
+          `Keel proposes ${hunks} change${hunks === 1 ? '' : 's'} to ${proposal.path}. Accept or reject each one in the editor, then Apply.`,
+          'Apply all',
+          'Reject all',
+        );
+        if (!this.reviews.has(proposal.key)) return;
+        if (pick === 'Apply all') {
+          this.setAll(proposal.key, true);
+          this.finish(proposal.key);
+        } else if (pick === 'Reject all') {
+          this.setAll(proposal.key, false);
+          this.finish(proposal.key);
+        }
       })();
     });
   }
@@ -114,7 +136,7 @@ export class EditorReviewer implements Reviewer, vscode.TextDocumentContentProvi
     if (!r) return [];
     const top = new vscode.Range(0, 0, 0, 0);
     const lenses: vscode.CodeLens[] = [
-      new vscode.CodeLens(top, { title: `$(check) Done reviewing (${r.accepted.size}/${r.proposal.hunks.length} hunks accepted)`, command: 'keel.review.done', arguments: [r.proposal.key] }),
+      new vscode.CodeLens(top, { title: `$(check) Apply ${r.accepted.size} of ${r.proposal.hunks.length} hunk${r.proposal.hunks.length === 1 ? '' : 's'} and continue`, command: 'keel.review.done', arguments: [r.proposal.key] }),
       new vscode.CodeLens(top, { title: 'Accept all', command: 'keel.review.all', arguments: [r.proposal.key, true] }),
       new vscode.CodeLens(top, { title: 'Reject all', command: 'keel.review.all', arguments: [r.proposal.key, false] }),
       new vscode.CodeLens(top, { title: 'Side-by-side diff', command: 'keel.review.sideBySide', arguments: [r.proposal.key] }),
@@ -219,4 +241,11 @@ async function languageFor(path: string): Promise<string | undefined> {
   if (!lang) return undefined;
   const known = await vscode.languages.getLanguages();
   return known.includes(lang) ? lang : undefined;
+}
+
+/** Commands arrive with a proposal key (CodeLens, status bar) or with the tab's URI (editor title buttons). */
+function keyOf(arg: unknown): string | undefined {
+  if (typeof arg === 'string') return arg;
+  const q = (arg as { query?: unknown } | undefined)?.query;
+  return typeof q === 'string' && q ? q : undefined;
 }

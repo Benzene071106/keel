@@ -39,8 +39,11 @@ KEEL_PRIMARY_MODEL=mock/edit-helpers KEEL_FALLBACK_MODEL=mock/edit-helpers node 
 cd extension && npm install && npm run build
 ```
 
-In the Extension Development Host, open a repository (e.g. Flask at tag 3.1.3) and run
-**Keel: Run Agent Task**. Output streams to the "Keel" output channel.
+In the Extension Development Host, open a repository (e.g. Flask at tag 3.1.3), click the Keel icon in
+the activity bar and type a task in the Agent panel (or run **Keel: Run Agent Task**). The panel shows the
+timeline, the Context Ledger, changed files, Stop and Undo run. A raw log goes to the "Keel" output channel.
+
+No debugger needed: `code --extensionDevelopmentPath=/path/to/keel/extension /path/to/flask` does the same as F5.
 
 ### Inline edit
 
