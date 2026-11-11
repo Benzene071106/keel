@@ -162,7 +162,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             },
             onRetry: r => {
               panel.post({ type: 'retry', ...r });
-              out.appendLine(`\n⟳ ${r.target}: transient model error, retry ${r.attempt} in ${r.delayMs} ms (${r.reason})`);
+              out.appendLine(`\n⟳ ${r.target}: transient model error, retry ${r.attempt} in ${(r.delayMs / 1000).toFixed(1)} s${r.hinted ? ' (provider asked)' : ''} (${r.reason})`);
             },
             onSwitch: sw => {
               panel.post({ type: 'switch', from: sw.from, to: sw.to, reason: sw.reason });

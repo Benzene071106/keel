@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, continuationMessage, runWithFailover, withInlineFailover } from '../../src/core/trueforge/failover';
+import { classifyFailure, continuationMessage, isDailyQuota, retryHintMs, runWithFailover, withInlineFailover } from '../../src/core/trueforge/failover';
 
 /** Fake TrueForge client: each session id maps to a queue of turn results. */
 function fakeClient(script: Record<string, ({ error: string } | { output: string })[]>) {
@@ -84,6 +84,57 @@ describe('runWithFailover', () => {
     const out = await runWithFailover(client, 'x', {}, () => true, { targets: [target('a')] });
     expect(out.status).toBe('cancelled');
     expect(sent).toHaveLength(0);
+  });
+});
+
+const GEMINI_429 =
+  '[Model Error] Request failed (429): You exceeded your current quota. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 5, model: gemini-3.8-flash. Please retry in 18.617689352s. [{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"18s"}]';
+
+describe('provider retry hints', () => {
+  it('reads the wait the provider asked for', () => {
+    expect(retryHintMs(GEMINI_429)).toBe(18618);
+    expect(retryHintMs('Request failed (429): {"retryDelay": "7s"}')).toBe(7000);
+    expect(retryHintMs('Rate limit reached. Please try again in 2.5s.')).toBe(2500);
+    expect(retryHintMs('Rate limit reached. Please try again in 120ms.')).toBe(120);
+    expect(retryHintMs('Please try again in 1m30s')).toBe(90000);
+    expect(retryHintMs('retry-after: 12')).toBe(12000);
+    expect(retryHintMs('[Model Error] Request failed (500): x')).toBeUndefined();
+  });
+
+  it('spots daily quotas', () => {
+    expect(isDailyQuota('quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier')).toBe(true);
+    expect(isDailyQuota(GEMINI_429)).toBe(false);
+  });
+
+  it('waits as long as the provider says, with more patience for rate limits', async () => {
+    const { client } = fakeClient({ a: [{ error: GEMINI_429 }, { error: GEMINI_429 }, { error: GEMINI_429 }, { output: 'ok' }], b: [] });
+    const waits: number[] = [];
+    const out = await runWithFailover(client, 'x', {}, () => false, { targets: [target('a'), target('b')], sleep: async ms => void waits.push(ms) });
+    expect(out.target).toBe('a');
+    expect(out.status).toBe('done');
+    expect(waits).toEqual([19118, 19118, 19118]);
+  });
+
+  it('switches instead of waiting when the wait is too long or the quota is daily', async () => {
+    const long = '[Model Error] Request failed (429): quota. Please retry in 3600s.';
+    const daily = '[Model Error] Request failed (429): quotaId GenerateRequestsPerDayPerProjectPerModel. Please retry in 10s.';
+    for (const err of [long, daily]) {
+      const { client } = fakeClient({ a: [{ error: err }], b: [{ output: 'ok' }] });
+      const waits: number[] = [];
+      const out = await runWithFailover(client, 'x', {}, () => false, { targets: [target('a'), target('b')], sleep: async ms => void waits.push(ms) });
+      expect(out.target).toBe('b');
+      expect(waits).toEqual([]);
+    }
+  });
+
+  it('wakes from a long wait when the user presses Stop', async () => {
+    const { client } = fakeClient({ a: [{ error: '[Model Error] Request failed (429): Please retry in 30s.' }], b: [] });
+    let stop = false;
+    setTimeout(() => (stop = true), 300);
+    const t0 = Date.now();
+    const out = await runWithFailover(client, 'x', {}, () => stop, { targets: [target('a'), target('b')] });
+    expect(out.status).toBe('cancelled');
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 });
 

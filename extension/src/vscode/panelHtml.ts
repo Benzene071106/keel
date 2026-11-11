@@ -142,7 +142,7 @@ export function panelHtml(nonce: string, cspSource: string): string {
       if (e.rejected) d.appendChild(el('span', 'rej', ', ' + e.rejected + ' rejected by you'));
       add(d);
     },
-    retry(e) { say = null; add(el('div', 'note', e.target + ' had a temporary error. Retry ' + e.attempt + ' in ' + e.delayMs + ' ms. ' + e.reason)); },
+    retry(e) { say = null; const secs = (e.delayMs / 1000).toFixed(1) + ' s'; add(el('div', 'note', e.hinted ? (e.target + ' is rate-limited. Waiting ' + secs + ', as the provider asked, then retry ' + e.attempt + '. Stop cancels the wait.') : (e.target + ' had a temporary error. Retry ' + e.attempt + ' in ' + secs + '. ' + e.reason))); },
     switch(e) { say = null; $('model').className = 'pill warn'; add(el('div', 'note', 'Model failed: ' + e.reason + ' Switched from ' + e.from + ' to ' + e.to + '.')); },
     end(e) {
       say = null;

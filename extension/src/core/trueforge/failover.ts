@@ -21,6 +21,37 @@ export function classifyFailure(message: string): FailureClass {
   return 'not-model';
 }
 
+/**
+ * How long the provider asked us to wait, if it said so: Gemini's "Please retry in 18.6s" /
+ * "retryDelay": "18s", OpenAI-style "try again in 2.5s" / "in 120ms", or a Retry-After header echoed in the text.
+ */
+export function retryHintMs(message: string): number | undefined {
+  const m = message.toLowerCase();
+  const pats: [RegExp, number][] = [
+    [/retry(?:ing)? in\s+([\d.]+)\s*ms\b/, 1],
+    [/try again in\s+([\d.]+)\s*ms\b/, 1],
+    [/retry(?:ing)? in\s+([\d.]+)\s*s(?:ec(?:ond)?s?)?\b/, 1000],
+    [/try again in\s+([\d.]+)\s*s(?:ec(?:ond)?s?)?\b/, 1000],
+    [/try again in\s+(\d+)m([\d.]+)s/, -1],
+    [/"?retrydelay"?\s*[:=]\s*\\?"?([\d.]+)s/, 1000],
+    [/retry-after\s*[:=]?\s*"?(\d+(?:\.\d+)?)/, 1000],
+  ];
+  for (const [re, mult] of pats) {
+    const x = re.exec(m);
+    if (!x) continue;
+    const ms = mult === -1 ? (Number(x[1]) * 60 + Number(x[2])) * 1000 : Number(x[1]) * mult;
+    if (Number.isFinite(ms) && ms >= 0) return Math.ceil(ms);
+  }
+  return undefined;
+}
+
+/** A per-day quota will not come back by waiting a minute; move to the next model instead. */
+export function isDailyQuota(message: string): boolean {
+  return /per ?day|perday|daily (?:limit|quota)|requests per day|\brpd\b/i.test(message);
+}
+
+export const MAX_WAIT_MS = 60_000;
+
 export interface FailoverTarget {
   /** Shown to the user, e.g. the agent name. */
   label: string;
@@ -40,13 +71,17 @@ export interface FailoverOptions {
   targets: FailoverTarget[];
   /** Retries on the same target for transient failures. */
   transientRetries?: number;
+  /** Retries on the same target when the provider rate-limits us and says how long to wait. */
+  rateLimitRetries?: number;
+  /** Longest wait we accept from a provider hint; longer (or a daily quota) means switch. */
+  maxWaitMs?: number;
   backoffMs?: (attempt: number) => number;
   sleep?: (ms: number) => Promise<void>;
   /** Files changed (and accepted) so far in this run; used to avoid blind replays. */
   changedFiles?: () => string[];
   onSession?(sessionId: string, target: string): void;
   onSwitch?(info: { from: string; to: string; reason: string; class: FailureClass }): void;
-  onRetry?(info: { target: string; attempt: number; delayMs: number; reason: string }): void;
+  onRetry?(info: { target: string; attempt: number; delayMs: number; reason: string; hinted?: boolean }): void;
 }
 
 export type FailoverOutcome = TurnOutcome & { target: string; attempts: Attempt[] };
@@ -69,8 +104,18 @@ export async function runWithFailover(
   opts: FailoverOptions,
 ): Promise<FailoverOutcome> {
   const retries = opts.transientRetries ?? 2;
+  const rateRetries = opts.rateLimitRetries ?? 4;
+  const maxWait = opts.maxWaitMs ?? MAX_WAIT_MS;
   const backoff = opts.backoffMs ?? (n => 600 * 2 ** n);
-  const sleep = opts.sleep ?? (ms => new Promise(r => setTimeout(r, ms)));
+  // Waits can be up to a minute, so the default sleep wakes early when the user presses Stop.
+  const sleep =
+    opts.sleep ??
+    (ms =>
+      new Promise<void>(r => {
+        const end = Date.now() + ms;
+        const tick = () => (shouldStop() || Date.now() >= end ? r() : setTimeout(tick, Math.min(250, end - Date.now())));
+        tick();
+      }));
   const changed = opts.changedFiles ?? (() => []);
   const attempts: Attempt[] = [];
   let last: TurnOutcome = { status: 'error', message: 'No model configured', turnIds: [] };
@@ -98,11 +143,17 @@ export async function runWithFailover(
       const cls = last.status === 'error' ? classifyFailure(last.message) : undefined;
       attempts.push({ target: target.label, sessionId, outcome: last.status, message: last.status === 'error' ? last.message : undefined, class: cls, ms: Date.now() - t0 });
       if (last.status !== 'error' || cls === 'not-model') return { ...last, target: target.label, attempts };
-      if (cls === 'model-transient' && r < retries) {
-        const delayMs = backoff(r);
-        opts.onRetry?.({ target: target.label, attempt: r + 1, delayMs, reason: last.message });
-        await sleep(delayMs);
-        continue;
+      if (cls === 'model-transient') {
+        // Honour the provider's own "retry in Ns" (plus a little slack); fall back to exponential backoff.
+        const hint = retryHintMs(last.message);
+        const tooLong = (hint !== undefined && hint > maxWait) || isDailyQuota(last.message);
+        const budget = hint !== undefined ? rateRetries : retries;
+        if (!tooLong && r < budget) {
+          const delayMs = Math.min(maxWait, Math.max(backoff(r), hint !== undefined ? hint + 500 : 0));
+          opts.onRetry?.({ target: target.label, attempt: r + 1, delayMs, reason: last.message, hinted: hint !== undefined });
+          await sleep(delayMs);
+          continue;
+        }
       }
       break; // fatal, or transient retries used up: next target
     }

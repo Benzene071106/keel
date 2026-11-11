@@ -13,7 +13,7 @@ export type PanelEvent =
   | { type: 'context'; used: number; budget: number; ms: number; dropped: string[]; items: { path: string; line?: number; role: string; granularity: string; tokens: number; reasons: string[] }[] }
   | { type: 'toolError'; message: string }
   | { type: 'write'; path: string; applied: number; rejected: number }
-  | { type: 'retry'; target: string; attempt: number; delayMs: number; reason: string }
+  | { type: 'retry'; target: string; attempt: number; delayMs: number; reason: string; hinted?: boolean }
   | { type: 'switch'; from: string; to: string; reason: string }
   | { type: 'end'; status: 'done' | 'cancelled' | 'error'; message?: string; changed: string[] }
   | { type: 'undone'; message: string };

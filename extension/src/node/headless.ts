@@ -122,7 +122,7 @@ async function main() {
       sessionId = id;
       console.log(`[keel] session ${id} on ${label}`);
     },
-    onRetry: r => console.log(`\n[failover] ${r.target}: transient error, retry ${r.attempt} in ${r.delayMs} ms (${r.reason})`),
+    onRetry: r => console.log(`\n[failover] ${r.target}: transient error, retry ${r.attempt} in ${(r.delayMs / 1000).toFixed(1)} s${r.hinted ? ' (provider asked)' : ''} (${r.reason})`),
     onSwitch: s => console.log(`\n[failover] ${s.from} -> ${s.to} (${s.class}: ${s.reason})`),
   });
   const journalOut = arg('journal-out', '');
