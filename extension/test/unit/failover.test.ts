@@ -98,6 +98,8 @@ describe('provider retry hints', () => {
     expect(retryHintMs('Rate limit reached. Please try again in 120ms.')).toBe(120);
     expect(retryHintMs('Please try again in 1m30s')).toBe(90000);
     expect(retryHintMs('retry-after: 12')).toBe(12000);
+    expect(retryHintMs('Please retry in 20h43m1.98612662s.')).toBe(74581987);
+    expect(isDailyQuota('description: Generate content requests per day limit exceeded on Free Tier.')).toBe(true);
     expect(retryHintMs('[Model Error] Request failed (500): x')).toBeUndefined();
   });
 

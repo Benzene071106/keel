@@ -36,6 +36,9 @@ export function retryHintMs(message: string): number | undefined {
     [/"?retrydelay"?\s*[:=]\s*\\?"?([\d.]+)s/, 1000],
     [/retry-after\s*[:=]?\s*"?(\d+(?:\.\d+)?)/, 1000],
   ];
+  // Durations like "20h43m1.98s" or "1m30s" (Gemini daily quotas, OpenAI-style limits).
+  const hms = /(?:retry|try again) in\s+(?:(\d+)h)?(?:(\d+)m(?!s))?(?:([\d.]+)s)?/.exec(m);
+  if (hms && (hms[1] || hms[2])) return Math.ceil(((Number(hms[1] ?? 0) * 60 + Number(hms[2] ?? 0)) * 60 + Number(hms[3] ?? 0)) * 1000);
   for (const [re, mult] of pats) {
     const x = re.exec(m);
     if (!x) continue;
