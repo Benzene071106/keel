@@ -7,6 +7,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { EditorHost } from '../host';
 import type { ReviewGate } from '../review/gate';
 import { registerTools, type ToolEvents } from './tools';
+import { registerContextTools, type ContextEvents } from './contextTools';
+import type { ContextService } from '../context/service';
 
 export interface RunningMcpServer {
   url: string;
@@ -17,7 +19,9 @@ export interface RunningMcpServer {
 export interface McpServerOptions {
   host: EditorHost;
   gate: ReviewGate;
-  events?: ToolEvents;
+  events?: ToolEvents & ContextEvents;
+  /** Enables context_pack / find_symbol / repo_map. */
+  context?: ContextService;
   port?: number;
   token?: string;
 }
@@ -38,7 +42,15 @@ export async function startMcpServer(opts: McpServerOptions): Promise<RunningMcp
       return;
     }
     const server = new McpServer({ name: 'keel-editor', version: '0.0.1' });
-    registerTools(server, opts.host, opts.gate, opts.events);
+    const events = opts.events ?? {};
+    registerTools(server, opts.host, opts.gate, {
+      ...events,
+      onFileWritten: (path, a, r) => {
+        opts.context?.invalidate();
+        events.onFileWritten?.(path, a, r);
+      },
+    });
+    if (opts.context) registerContextTools(server, opts.context, events);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on('close', () => {
       void transport.close();

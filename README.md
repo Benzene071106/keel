@@ -60,6 +60,28 @@ npx tsx src/node/headlessInline.ts --root /path/to/flask --file src/flask/helper
 
 With the mock model, pick scenarios per agent: `KEEL_PRIMARY_MODEL=mock/edit-helpers KEEL_MODEL_KEEL_INLINE=mock/inline-debug-flag node scripts/sync-agents.mjs`.
 
+## How context is chosen (Context Ledger)
+
+The agent's first call is `context_pack(request)`. Keel ranks files with signals it can explain,
+packs them under a token budget, and tells the model (and you, in the Keel output channel) why
+each file is there:
+
+- **Lexical**: BM25 over code symbols (name, signature, docstring) and doc sections.
+- **Named module**: the request says "cli" or "config", so `cli.py` and `config.py` get a boost.
+- **Mentions**: `@path` or `@symbol` you typed.
+- **Tests by convention**: `tests/test_x.py`, `x.test.ts`, and so on.
+- **Docs that reference the code**: Sphinx roles, `autofunction`, ``name()`` literals.
+- **Git co-change**: files committed together with the seeds, as P(other | seed). Commits that touch more than 30 files are ignored.
+- **Registration sites**: where in the same file a chosen symbol is used, e.g. `FlaskGroup.__init__` calls `add_command(shell_command)`.
+
+Each expansion signal counts once per file, from its strongest seed, so hubs like `CHANGES.rst` don't
+win just by touching everything. Each file degrades `full → symbols/sections → outline → path`
+before it is dropped. Dropped files are listed too.
+
+On Flask with the Task B request, the index builds in about 0.35 s. The pack takes about 30 ms and uses 7.4k of 12k tokens, and it
+includes `src/flask/cli.py`, `tests/test_cli.py`, `docs/cli.rst` and `CHANGES.rst`, each with its
+reasons. Also available: `find_symbol` and `repo_map`.
+
 ## Cancellation guarantee
 
 Stop (`Keel: Stop`, or Esc during inline edit) calls TrueForge `sessions.cancel`, rejects any open review,

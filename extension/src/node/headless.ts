@@ -7,6 +7,8 @@
  */
 import { NodeHost } from './nodeHost';
 import { startMcpServer } from '../core/mcp/server';
+import { ContextService } from '../core/context/service';
+import { gitIndexSources } from './indexSources';
 import { DecisionLedger, type Reviewer } from '../core/review/ledger';
 import { JournaledHost } from '../core/review/journal';
 import { createClient, registerMcpServer } from '../core/trueforge/client';
@@ -51,7 +53,10 @@ async function main() {
   const mcp = await startMcpServer({
     host,
     gate: ledger,
+    context: new ContextService(gitIndexSources(root)),
     events: {
+      onContextPack: p =>
+        console.log(`[context] ${p.items.length} files, ${p.used}/${p.budget} tokens, ${p.ms} ms\n` + p.items.map(i => `  ${i.score.toFixed(2)} ${i.path} (${i.granularity}): ${i.reasons[0] ?? ''}`).join('\n')),
       onToolCall: (n, a) => console.log(`\n[tool] ${n} ${JSON.stringify(a).slice(0, 160)}`),
       onFileWritten: (p, ok, rej) => console.log(`[write] ${p} applied=${ok.map(i => i + 1)} rejected=${rej.map(i => i + 1)}`),
     },

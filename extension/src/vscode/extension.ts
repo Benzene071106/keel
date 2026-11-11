@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
 import { startMcpServer, type RunningMcpServer } from '../core/mcp/server';
+import { ContextService } from '../core/context/service';
+import { gitIndexSources } from '../node/indexSources';
 import { DecisionLedger } from '../core/review/ledger';
 import { JournaledHost } from '../core/review/journal';
 import { EditorReviewer } from './review';
@@ -37,10 +39,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const client = createClient(baseUrl);
 
   const ready = (async () => {
+    const contextService = new ContextService(gitIndexSources(folder.uri.fsPath));
+    context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(() => contextService.invalidate()));
     mcp = await startMcpServer({
       host,
       gate: ledger,
+      context: contextService,
       events: {
+        onContextPack: p => {
+          out.appendLine(`◆ context pack: ${p.items.length} files, ${p.used}/${p.budget} tokens, ${p.ms} ms`);
+          for (const i of p.items) out.appendLine(`   ${i.score.toFixed(2)} ${i.path} [${i.granularity}] ${i.reasons.join('; ')}`);
+          if (p.dropped.length) out.appendLine(`   left out: ${p.dropped.map(d => d.path).join(', ')}`);
+        },
         onToolCall: (name, args) => out.appendLine(`\n▸ ${name} ${JSON.stringify(args).slice(0, 200)}`),
         onFileWritten: (p, ok, rej) => out.appendLine(`✎ ${p}: applied ${ok.length} hunk(s), rejected ${rej.length}`),
       },

@@ -1,0 +1,9 @@
+{
+  "description": "Task B opening move: ask for a context pack, then look up the command registration site.",
+  "steps": [
+    { "tool": "context_pack", "args": { "request": "Add a new built-in CLI command flask config that prints the loaded application's configuration as JSON, masking the values of any key containing SECRET, PASSWORD, TOKEN or KEY as \"***\". It must appear in flask --help, be covered by a test, and be documented alongside the other built-in commands." } },
+    { "tool": "find_symbol", "args": { "name": "FlaskGroup.__init__" } },
+    { "tool": "repo_map", "args": { "path": "src/flask", "max_files": 5 } },
+    { "text": "I have the context I need: cli.py (FlaskGroup registers built-in commands), tests/test_cli.py, docs/cli.rst and CHANGES.rst." }
+  ]
+}
