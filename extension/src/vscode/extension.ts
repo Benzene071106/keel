@@ -83,6 +83,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         out.appendLine(`\n=== ${outcome.status}${outcome.status === 'error' ? `: ${outcome.message}` : ''}`);
         const touched = host.touched.map(c => c.path);
         if (touched.length) out.appendLine(`Changed this run: ${touched.join(', ')}  (Keel: Undo Last Run reverts them)`);
+        if (outcome.status === 'cancelled') {
+          const msg = touched.length
+            ? `Keel stopped. ${touched.length} file(s) were fully updated before Stop; nothing is half-applied.`
+            : 'Keel stopped. No files were changed.';
+          const pick = await vscode.window.showInformationMessage(msg, ...(touched.length ? ['Keep', 'Revert run'] : []));
+          if (pick === 'Revert run') await vscode.commands.executeCommand('keel.run.undo');
+        }
       } catch (err) {
         out.appendLine(`\n=== failed: ${String((err as Error).message ?? err)}`);
       } finally {

@@ -60,6 +60,15 @@ http
       res.on('close', () => (closed = true));
 
       const calls = step.tools ?? (step.tool ? [{ tool: step.tool, args: step.args }] : null);
+      // Text first (streamed word by word), then any tool calls in the same assistant message.
+      if (step.text !== undefined || !calls) {
+        const words = String(step.text ?? 'Done.').split(/(?<= )/);
+        for (const w of words) {
+          if (closed) return;
+          send({ choices: [{ index: 0, delta: { content: w }, finish_reason: null }] });
+          await sleep(slow ? 300 : 15);
+        }
+      }
       if (calls) {
         calls.forEach((c, i) => {
           const name = resolveTool(c.tool, available);
@@ -68,12 +77,6 @@ http
         });
         send({ choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }], usage });
       } else {
-        const words = String(step.text ?? 'Done.').split(/(?<= )/);
-        for (const w of words) {
-          if (closed) return;
-          send({ choices: [{ index: 0, delta: { content: w }, finish_reason: null }] });
-          await sleep(slow ? 300 : 15);
-        }
         send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], usage });
       }
       res.write('data: [DONE]\n\n');

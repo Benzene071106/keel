@@ -32,8 +32,10 @@ async function main() {
   const rejects = new Map<string, string[]>(
     rejectSpec ? rejectSpec.split(';').map(part => { const [p, h] = part.split(':'); return [p, (h ?? 'all').split(',')] as [string, string[]]; }) : [],
   );
+  const reviewDelay = Number(arg('review-delay-ms', '0'));
   const reviewer: Reviewer = {
     async review(proposals) {
+      if (reviewDelay) await new Promise(r => setTimeout(r, reviewDelay));
       return proposals.map(p => {
         const r = [...rejects.entries()].find(([k]) => p.path.endsWith(k))?.[1] ?? [];
         const accepted = p.hunks.map(h => h.index).filter(i => !(r.includes('all') || r.includes(String(i + 1))));
@@ -70,6 +72,16 @@ async function main() {
   } as never);
   console.log(`[keel] session ${session.id}`);
 
+  let stopped = false;
+  const cancelAfter = Number(arg('cancel-after-ms', '0'));
+  if (cancelAfter > 0) {
+    setTimeout(() => {
+      stopped = true;
+      ledger.cancel();
+      console.log(`\n[keel] STOP after ${cancelAfter} ms`);
+      void client.sessions.cancel(session.id);
+    }, cancelAfter);
+  }
   const outcome = await runRequest(client, session.id, request, {
     onText: (t, thread) => {
       if (!thread || thread === 'main') process.stdout.write(t);
@@ -82,7 +94,9 @@ async function main() {
       calls.forEach((c, i) => console.log(`[keel] ${c.toolName} -> ${JSON.stringify(answers[i])}`));
       return answers;
     },
-  });
+  }, () => stopped);
+  const journalOut = arg('journal-out', '');
+  if (journalOut) require('node:fs').writeFileSync(journalOut, JSON.stringify(host.touched, null, 2));
   if (process.argv.includes('--revert')) {
     const r = await host.revertRun();
     console.log(`[keel] undo run: reverted=${r.reverted.join(',')} skipped=${r.skipped.join(',')}`);

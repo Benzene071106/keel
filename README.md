@@ -4,8 +4,8 @@ A VS Code coding agent whose agent loop runs on [TrueForge](https://github.com/t
 Keel's editor (read, search, propose edits) is exposed to the agent as MCP tools; every write is
 gated by TrueForge tool approval and reviewed hunk by hunk.
 
-> Status: build steps 1-6 done (TrueForge loop, MCP tools, approval-driven per-hunk review, run journal
-> and undo, inline edit). Context engine and model fallback are next. Starting point: **from scratch**
+> Status: build steps 1-7 done (TrueForge loop, MCP tools, approval-driven per-hunk review, run journal
+> and undo, inline edit, cancel-safe runs). Context engine and model fallback are next. Starting point: **from scratch**
 > (no upstream fork).
 
 ## How review works
@@ -59,6 +59,19 @@ npx tsx src/node/headlessInline.ts --root /path/to/flask --file src/flask/helper
 ```
 
 With the mock model, pick scenarios per agent: `KEEL_PRIMARY_MODEL=mock/edit-helpers KEEL_MODEL_KEEL_INLINE=mock/inline-debug-flag node scripts/sync-agents.mjs`.
+
+## Cancellation guarantee
+
+Stop (`Keel: Stop`, or Esc during inline edit) calls TrueForge `sessions.cancel`, rejects any open review,
+and clears pending decisions, so a tool call that arrives later writes nothing. Each file write is a single
+atomic replace. After Stop, every file is either untouched or completely updated, and Keel offers
+**Revert run**. `scripts/chaos-cancel.mjs` checks this by stopping a three-file run at random moments:
+
+```bash
+KEEL_PRIMARY_MODEL=mock/slow-multi-edit node scripts/sync-agents.mjs
+node scripts/chaos-cancel.mjs --root /path/to/flask --runs 30
+# 30/30 consistent. untouched=10 some-files=14 all-files=6   (2026-11-11)
+```
 
 ## Layout
 
