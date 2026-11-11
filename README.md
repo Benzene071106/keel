@@ -29,7 +29,7 @@ Requirements: Node 22.14+, git, ripgrep (`rg`) on PATH for headless runs.
 ./scripts/start-trueforge.sh            # = OUTBOUND_URL_ALLOWED_HOSTS='["127.0.0.1","localhost"]' npx @truefoundry/trueforge@latest
 
 # 2. Add a real model. The key is typed hidden and goes only to TrueForge, never into a file:
-#      node scripts/add-provider.mjs groq        (then run the sync-agents line it prints, and skip to step 4)
+#      node scripts/add-provider.mjs gemini      (or groq, openrouter; then run the sync-agents line it prints, and skip to step 4)
 #    Or use the scripted mock model (no API key):
 node dev/mock-model/server.mjs &        # OpenAI-compatible mock on 127.0.0.1:7802
 ./dev/register-mock-model.sh            # registers provider "mock" with one model per scenario
