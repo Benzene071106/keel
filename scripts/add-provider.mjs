@@ -10,7 +10,9 @@ const TF = process.env.TRUEFORGE_URL ?? 'http://localhost:8790';
 const PRESETS = {
   groq: { baseUrl: 'https://api.groq.com/openai/v1', keyEnv: 'GROQ_API_KEY', prefer: ['openai/gpt-oss-120b', 'moonshotai/kimi-k2-instruct-0905', 'moonshotai/kimi-k2-instruct', 'llama-3.3-70b-versatile', 'qwen/qwen3-32b'], fast: ['openai/gpt-oss-20b', 'llama-3.1-8b-instant', 'llama-3.3-70b-versatile'] },
   // Built-in TrueForge provider type; its name is fixed to "google-gemini".
-  gemini: { native: 'google-gemini', baseUrl: process.env.KEEL_TEST_GEMINI_URL ?? 'https://generativelanguage.googleapis.com/v1beta', keyEnv: 'GEMINI_API_KEY', prefer: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-pro'] /* flash first: free-tier keys have little or no pro quota */, fast: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'] },
+  // Built-in TrueForge provider type; its name is fixed to "google-gemini". Google retires old models for new keys,
+  // so models are ranked by version instead of hard-coded (see rankGemini).
+  gemini: { native: 'google-gemini', baseUrl: process.env.KEEL_TEST_GEMINI_URL ?? 'https://generativelanguage.googleapis.com/v1beta', keyEnv: 'GEMINI_API_KEY', rank: 'gemini' },
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', keyEnv: 'OPENROUTER_API_KEY', prefer: [], fast: [] },
 };
 const flag = n => {
@@ -97,11 +99,26 @@ if (!put.ok) {
   process.exit(1);
 }
 
+/** Stable (non-preview) Gemini "flash" models, newest version first; lite variants after full ones. */
+function rankGemini(ms) {
+  const ver = id => (/gemini-(\d+)(?:\.(\d+))?/.exec(id) ?? []).slice(1).map(Number);
+  const ok = ms.filter(m => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(m.model_id));
+  return ok.sort((a, b) => {
+    const [a1 = 0, a2 = 0] = ver(a.model_id), [b1 = 0, b2 = 0] = ver(b.model_id);
+    return b1 - a1 || b2 - a2 || (a.model_id.includes('lite') ? 1 : 0) - (b.model_id.includes('lite') ? 1 : 0);
+  });
+}
+if (preset.rank === 'gemini') {
+  const r = rankGemini(models).filter(m => !m.model_id.includes('lite'));
+  preset.prefer = r.map(m => m.model_id);
+  preset.fast = preset.prefer;
+}
 const pick = list => list.map(id => models.find(m => m.model_id === id)).find(Boolean);
 const primary = pick(preset.prefer ?? []) ?? models[0];
 const fallback = (preset.prefer ?? []).map(id => models.find(m => m.model_id === id)).filter(Boolean).find(m => m !== primary) ?? models.find(m => m !== primary) ?? primary;
+const inlineFallback = fallback;
 const fast = pick(preset.fast ?? []) ?? primary;
 console.log(`Registered provider "${name}" with ${models.length} models:`);
 for (const m of models) console.log(`  ${name}/${m.name}`);
 console.log('\nNext, point the Keel agents at it (same line in PowerShell and Git Bash):\n');
-console.log(`  node scripts/sync-agents.mjs --primary ${name}/${primary.name} --fallback ${name}/${fallback.name} --inline ${name}/${fast.name} --inline-fallback ${name}/${primary.name}`);
+console.log(`  node scripts/sync-agents.mjs --primary ${name}/${primary.name} --fallback ${name}/${fallback.name} --inline ${name}/${fast.name} --inline-fallback ${name}/${inlineFallback.name}`);
