@@ -3,6 +3,10 @@
 # One TrueForge model per scenario file, plus failure models for resilience tests.
 set -euo pipefail
 TF="${TRUEFORGE_URL:-http://localhost:8790}"
+if ! curl -s -o /dev/null "$TF/api/v1/agents?limit=1"; then
+  echo "TrueForge is not reachable at $TF. Start it first: ./scripts/start-trueforge.sh" >&2
+  exit 1
+fi
 PORT="${MOCK_MODEL_PORT:-7802}"
 dir="$(cd "$(dirname "$0")/mock-model/scenarios" && pwd)"
 models=""
@@ -15,6 +19,6 @@ done
 for id in fail-401 fail-500; do
   models+="{\"model_id\":\"$id\",\"name\":\"$id\",\"properties\":{\"context_length\":128000,\"max_output_tokens\":8192}},"
 done
-curl -sf -X PUT "$TF/api/v1/settings/model-providers" -H 'content-type: application/json' \
+curl -sS --fail-with-body -X PUT "$TF/api/v1/settings/model-providers" -H 'content-type: application/json' \
   -d "{\"manifest\":{\"type\":\"custom\",\"name\":\"mock\",\"base_url\":\"http://127.0.0.1:$PORT/v1\",\"auth\":{\"api_key\":\"mock\"},\"models\":[${models%,}]}}" >/dev/null
 echo "registered mock models: $(echo "$models" | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | tr '\n' ' ')"
