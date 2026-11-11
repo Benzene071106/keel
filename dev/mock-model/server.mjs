@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.MOCK_MODEL_PORT ?? 7802);
+const failCounts = new Map();
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function loadScenario(id) {
@@ -49,6 +50,17 @@ http
       const msgs = j.messages ?? [];
       const turn = msgs.filter(m => m.role === 'assistant').length;
       const step = scenario.steps[Math.min(turn, scenario.steps.length - 1)];
+      // {"fail": 500, "times": N, ...step}: answer with an HTTP error N times (forever if no N), then play the step.
+      if (step.fail) {
+        const key = `${id}|${turn}|${JSON.stringify(msgs.find(m => m.role === 'user')?.content ?? '').slice(0, 200)}`;
+        const n = (failCounts.get(key) ?? 0) + 1;
+        failCounts.set(key, n);
+        if (!step.times || n <= step.times) {
+          console.log(`[mock] ${id} step ${turn}: HTTP ${step.fail} (${n})`);
+          res.writeHead(step.fail, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { message: `scripted failure ${step.fail}` } }));
+          return;
+        }
+      }
       const available = (j.tools ?? []).map(t => t.function?.name).filter(Boolean);
       console.log(`[mock] ${id} step ${turn}:`, JSON.stringify(step).slice(0, 120));
 

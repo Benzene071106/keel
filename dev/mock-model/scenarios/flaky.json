@@ -1,0 +1,49 @@
+{
+  "description": "Edits helpers.py; the next call fails once with 500, then succeeds (transient retry).",
+  "steps": [
+    {
+      "text": "First the helpers module. ",
+      "tool": "propose_edit",
+      "args": {
+        "path": "src/flask/helpers.py",
+        "edits": [
+          {
+            "old_str": "def get_load_dotenv(default: bool = True) -> bool:",
+            "new_str": "# keel-chaos-1\ndef get_load_dotenv(default: bool = True) -> bool:"
+          }
+        ]
+      }
+    },
+    {
+      "text": "Now the CLI module. ",
+      "tool": "propose_edit",
+      "args": {
+        "path": "src/flask/cli.py",
+        "edits": [
+          {
+            "old_str": "def shell_command() -> None:",
+            "new_str": "# keel-chaos-2\ndef shell_command() -> None:"
+          }
+        ]
+      },
+      "fail": 500,
+      "times": 1
+    },
+    {
+      "text": "Finally the changelog. ",
+      "tool": "propose_edit",
+      "args": {
+        "path": "CHANGES.rst",
+        "edits": [
+          {
+            "old_str": "Version 3.1.3\n-------------\n",
+            "new_str": "Version 3.1.3\n-------------\n\n-   keel chaos marker.\n"
+          }
+        ]
+      }
+    },
+    {
+      "text": "All three edits are done and each file was changed in one atomic write."
+    }
+  ]
+}

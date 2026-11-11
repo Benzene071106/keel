@@ -1,0 +1,21 @@
+{
+  "description": "Edits helpers.py, then the model endpoint starts failing for good (Task C mid-run).",
+  "steps": [
+    {
+      "text": "First the helpers module. ",
+      "tool": "propose_edit",
+      "args": {
+        "path": "src/flask/helpers.py",
+        "edits": [
+          {
+            "old_str": "def get_load_dotenv(default: bool = True) -> bool:",
+            "new_str": "# keel-chaos-1\ndef get_load_dotenv(default: bool = True) -> bool:"
+          }
+        ]
+      }
+    },
+    {
+      "fail": 500
+    }
+  ]
+}

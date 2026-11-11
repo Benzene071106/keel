@@ -1,0 +1,42 @@
+{
+  "description": "Fallback model resuming midrun-fail: checks helpers.py is done, then does the remaining two edits.",
+  "steps": [
+    {
+      "text": "Resuming. Checking what was already changed. ",
+      "tool": "search_code",
+      "args": {
+        "pattern": "keel-chaos-1",
+        "glob": "*.py"
+      }
+    },
+    {
+      "text": "Now the CLI module. ",
+      "tool": "propose_edit",
+      "args": {
+        "path": "src/flask/cli.py",
+        "edits": [
+          {
+            "old_str": "def shell_command() -> None:",
+            "new_str": "# keel-chaos-2\ndef shell_command() -> None:"
+          }
+        ]
+      }
+    },
+    {
+      "text": "Finally the changelog. ",
+      "tool": "propose_edit",
+      "args": {
+        "path": "CHANGES.rst",
+        "edits": [
+          {
+            "old_str": "Version 3.1.3\n-------------\n",
+            "new_str": "Version 3.1.3\n-------------\n\n-   keel chaos marker.\n"
+          }
+        ]
+      }
+    },
+    {
+      "text": "helpers.py was already done by the previous model; I finished cli.py and CHANGES.rst."
+    }
+  ]
+}

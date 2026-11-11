@@ -6,7 +6,8 @@ import { DecisionLedger } from '../core/review/ledger';
 import { JournaledHost } from '../core/review/journal';
 import { EditorReviewer } from './review';
 import { createClient, registerMcpServer } from '../core/trueforge/client';
-import { runRequest } from '../core/trueforge/turnRunner';
+import { runWithFailover, withInlineFailover } from '../core/trueforge/failover';
+import { runInline } from '../core/inline/runInline';
 import { VscodeHost } from './vscodeHost';
 import { registerInlineEdit } from './inline';
 
@@ -62,7 +63,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void vscode.window.showErrorMessage(`Keel: ${String(err.message ?? err)}`);
   });
 
-  registerInlineEdit(context, { client, host, reviewer, out, agentName: () => cfg<string>('inlineAgent') });
+  const modelStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
+  modelStatus.tooltip = 'Model agent serving the current Keel run';
+  context.subscriptions.push(modelStatus);
+
+  registerInlineEdit(context, {
+    client,
+    host,
+    reviewer,
+    out,
+    agentName: () => cfg<string>('inlineAgent'),
+    run: (req, hooks) =>
+      withInlineFailover(
+        [cfg<string>('inlineAgent'), cfg<string>('inlineFallbackAgent')].filter((n, i, all) => n && all.indexOf(n) === i),
+        agent => runInline(client, agent, req, hooks),
+        (from, to, reason) => out.appendLine(`⇄ inline: ${from} → ${to}: ${reason}`),
+      ),
+  });
 
   context.subscriptions.push(
     { dispose: () => void mcp?.close() },
@@ -73,14 +90,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       out.show(true);
       out.appendLine(`\n=== ${request}`);
       stopRequested = false;
+      modelStatus.backgroundColor = undefined;
       host.beginRun();
       ledger.begin();
       try {
-        const { data: session } = await client.sessions.create({ agent: { name: cfg<string>('agent') } });
-        currentSessionId = session.id;
-        const outcome = await runRequest(
+        const names = [cfg<string>('agent'), cfg<string>('fallbackAgent')].filter((n, i, all) => n && all.indexOf(n) === i);
+        const outcome = await runWithFailover(
           client,
-          session.id,
           request,
           {
             onText: (t, thread) => {
@@ -89,7 +105,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             onApproval: calls => ledger.onApproval(calls),
           },
           () => stopRequested,
+          {
+            targets: names.map(name => ({ label: name, createSession: async () => (await client.sessions.create({ agent: { name } })).data.id })),
+            changedFiles: () => host.touched.map(c => c.path),
+            onSession: (id, label) => {
+              currentSessionId = id;
+              modelStatus.text = `$(hubot) Keel: ${label}`;
+              modelStatus.show();
+            },
+            onRetry: r => out.appendLine(`\n⟳ ${r.target}: transient model error, retry ${r.attempt} in ${r.delayMs} ms (${r.reason})`),
+            onSwitch: sw => {
+              out.appendLine(`\n⇄ switching ${sw.from} → ${sw.to}: ${sw.reason}`);
+              modelStatus.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+              void vscode.window.showWarningMessage(`Keel: ${sw.from} failed (${sw.reason}). Continuing on ${sw.to}.`);
+            },
+          },
         );
+        if (outcome.status === 'error') void vscode.window.showErrorMessage(`Keel: ${outcome.message}`);
         out.appendLine(`\n=== ${outcome.status}${outcome.status === 'error' ? `: ${outcome.message}` : ''}`);
         const touched = host.touched.map(c => c.path);
         if (touched.length) out.appendLine(`Changed this run: ${touched.join(', ')}  (Keel: Undo Last Run reverts them)`);

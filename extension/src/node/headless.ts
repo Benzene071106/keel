@@ -12,7 +12,7 @@ import { gitIndexSources } from './indexSources';
 import { DecisionLedger, type Reviewer } from '../core/review/ledger';
 import { JournaledHost } from '../core/review/journal';
 import { createClient, registerMcpServer } from '../core/trueforge/client';
-import { runRequest } from '../core/trueforge/turnRunner';
+import { runWithFailover, type FailoverTarget } from '../core/trueforge/failover';
 
 function arg(name: string, fallback?: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -65,29 +65,36 @@ async function main() {
   console.log(`[keel] MCP ${mcp.url} registered as ${mcpName}`);
 
   const client = createClient(tf);
-  const { data: session } = await client.sessions.create({
-    agent: agentName ? { name: agentName } : {
-      spec: {
-        model: { name: model },
-        instructions: 'You are Keel, a coding agent. Read before you write. Edit with propose_edit.',
-        mcp_servers: [{ name: mcpName, preload: true, require_approval_for_tools: ['propose_edit', 'create_file'] }],
-        config: { iteration_limit: 30 },
-      },
+  // Primary target plus any --fallback-model / --fallback-agent flags, in order.
+  const spec = (m: string) => ({
+    spec: {
+      model: { name: m },
+      instructions: 'You are Keel, a coding agent. Read before you write. Edit with propose_edit.',
+      mcp_servers: [{ name: mcpName, preload: true, require_approval_for_tools: ['propose_edit', 'create_file'] }],
+      config: { iteration_limit: 30 },
     },
-  } as never);
-  console.log(`[keel] session ${session.id}`);
+  });
+  const targets: FailoverTarget[] = [];
+  const add = (label: string, agent: object) =>
+    targets.push({ label, createSession: async () => (await client.sessions.create({ agent } as never)).data.id });
+  add(agentName || model, agentName ? { name: agentName } : spec(model));
+  process.argv.forEach((a, i) => {
+    if (a === '--fallback-model') add(process.argv[i + 1], spec(process.argv[i + 1]));
+    if (a === '--fallback-agent') add(process.argv[i + 1], { name: process.argv[i + 1] });
+  });
 
   let stopped = false;
+  let sessionId: string | undefined;
   const cancelAfter = Number(arg('cancel-after-ms', '0'));
   if (cancelAfter > 0) {
     setTimeout(() => {
       stopped = true;
       ledger.cancel();
       console.log(`\n[keel] STOP after ${cancelAfter} ms`);
-      void client.sessions.cancel(session.id);
+      if (sessionId) void client.sessions.cancel(sessionId);
     }, cancelAfter);
   }
-  const outcome = await runRequest(client, session.id, request, {
+  const outcome = await runWithFailover(client, request, {
     onText: (t, thread) => {
       if (!thread || thread === 'main') process.stdout.write(t);
     },
@@ -99,7 +106,17 @@ async function main() {
       calls.forEach((c, i) => console.log(`[keel] ${c.toolName} -> ${JSON.stringify(answers[i])}`));
       return answers;
     },
-  }, () => stopped);
+  }, () => stopped, {
+    targets,
+    backoffMs: n => Number(arg('backoff-ms', '600')) * 2 ** n,
+    changedFiles: () => host.touched.map(c => c.path),
+    onSession: (id, label) => {
+      sessionId = id;
+      console.log(`[keel] session ${id} on ${label}`);
+    },
+    onRetry: r => console.log(`\n[failover] ${r.target}: transient error, retry ${r.attempt} in ${r.delayMs} ms (${r.reason})`),
+    onSwitch: s => console.log(`\n[failover] ${s.from} -> ${s.to} (${s.class}: ${s.reason})`),
+  });
   const journalOut = arg('journal-out', '');
   if (journalOut) require('node:fs').writeFileSync(journalOut, JSON.stringify(host.touched, null, 2));
   if (process.argv.includes('--revert')) {

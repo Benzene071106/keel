@@ -82,6 +82,30 @@ On Flask with the Task B request, the index builds in about 0.35 s. The pack tak
 includes `src/flask/cli.py`, `tests/test_cli.py`, `docs/cli.rst` and `CHANGES.rst`, each with its
 reasons. Also available: `find_symbol` and `repo_map`.
 
+## When a model fails (Task C)
+
+TrueForge has no model fallback. It retries only connect timeouts and 408/429/503, twice. Keel's
+`runWithFailover` (`extension/src/core/trueforge/failover.ts`) adds the rest:
+
+| Failure | What Keel does |
+| --- | --- |
+| 401/403/404, connection refused, DNS | Fatal for that model: switch to the fallback agent at once |
+| 408/429/5xx, timeout, reset | Retry on the same session (2 tries, backoff), then switch |
+| Anything that is not a model error | Shown to you; no switch |
+
+A fallback never replays blindly. If files were already changed and accepted, the fallback model gets
+the request plus the list of changed files and is told not to redo them. The status bar shows which
+agent is serving, and turns amber after a switch. Inline edit uses the same policy.
+
+Reproduce with the mock model:
+
+```bash
+cd extension
+npx tsx src/node/headless.ts --root ../flask --model mock/fail-401 --fallback-model mock/edit-helpers "..."
+npx tsx src/node/headless.ts --root ../flask --model mock/midrun-fail --fallback-model mock/resume "..."
+npx tsx src/node/headless.ts --root ../flask --model mock/flaky --fallback-model mock/resume "..."
+```
+
 ## Cancellation guarantee
 
 Stop (`Keel: Stop`, or Esc during inline edit) calls TrueForge `sessions.cancel`, rejects any open review,
