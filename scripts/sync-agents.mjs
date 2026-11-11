@@ -7,10 +7,25 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const TF = process.env.TRUEFORGE_URL ?? 'http://localhost:8790';
+// Flags work in every shell (PowerShell, cmd, bash); they set the same variables as the environment would.
+//   node scripts/sync-agents.mjs --primary openai/gpt-x --fallback anthropic/claude-x [--inline provider/model] [--inline-fallback provider/model]
+//   node scripts/sync-agents.mjs --mock        (scripted mock model, no API key)
+const flag = name => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i !== -1 ? process.argv[i + 1] : undefined;
+};
+if (process.argv.includes('--mock')) {
+  process.env.KEEL_PRIMARY_MODEL ??= 'mock/edit-helpers';
+  process.env.KEEL_MODEL_KEEL_INLINE ??= 'mock/inline-debug-flag';
+}
+if (flag('primary')) process.env.KEEL_PRIMARY_MODEL = flag('primary');
+if (flag('fallback')) process.env.KEEL_FALLBACK_MODEL = flag('fallback');
+if (flag('inline')) process.env.KEEL_MODEL_KEEL_INLINE = flag('inline');
+if (flag('inline-fallback')) process.env.KEEL_MODEL_KEEL_INLINE_FALLBACK = flag('inline-fallback');
 const primary = process.env.KEEL_PRIMARY_MODEL;
 const fallback = process.env.KEEL_FALLBACK_MODEL ?? primary;
 if (!primary) {
-  console.error('Set KEEL_PRIMARY_MODEL (e.g. openai/gpt-x or mock/edit-helpers). Optional: KEEL_FALLBACK_MODEL.');
+  console.error('Usage: node scripts/sync-agents.mjs --primary <provider/model> [--fallback <provider/model>]   or   --mock');
   process.exit(1);
 }
 const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'agents');

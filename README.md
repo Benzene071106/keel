@@ -33,7 +33,7 @@ node dev/mock-model/server.mjs &        # OpenAI-compatible mock on 127.0.0.1:78
 ./dev/register-mock-model.sh            # registers provider "mock" with one model per scenario
 
 # 3. Create the Keel agents (keel-agent and keel-agent-fallback)
-KEEL_PRIMARY_MODEL=mock/edit-helpers KEEL_FALLBACK_MODEL=mock/edit-helpers node scripts/sync-agents.mjs
+node scripts/sync-agents.mjs --mock      # or: --primary <provider/model> --fallback <provider/model>
 
 # 4. Build the extension, then press F5 in VS Code on the extension/ folder
 cd extension && npm install && npm run build

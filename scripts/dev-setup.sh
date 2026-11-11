@@ -20,10 +20,7 @@ fi
 ./dev/register-mock-model.sh
 
 echo "== 3/4 Keel agents"
-KEEL_PRIMARY_MODEL="${KEEL_PRIMARY_MODEL:-mock/edit-helpers}" \
-KEEL_FALLBACK_MODEL="${KEEL_FALLBACK_MODEL:-mock/edit-helpers}" \
-KEEL_MODEL_KEEL_INLINE="${KEEL_MODEL_KEEL_INLINE:-mock/inline-debug-flag}" \
-  node scripts/sync-agents.mjs
+node scripts/sync-agents.mjs --mock
 
 echo "== 4/4 build extension"
 cd extension
