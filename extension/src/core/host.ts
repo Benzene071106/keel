@@ -25,6 +25,8 @@ export interface EditorHost {
   writeText(relPath: string, text: string): Promise<void>;
   /** Create a new file; fails if it exists. */
   createFile(relPath: string, text: string): Promise<void>;
+  /** Delete a file (used only to undo a file the agent created). */
+  deleteFile?(relPath: string): Promise<void>;
   log(message: string): void;
 }
 

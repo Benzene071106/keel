@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { safeRelPath, type EditorHost } from '../host';
-import { computeHunks, applyHunks, renderHunk } from '../review/hunks';
-import { proposalKey, type ReviewGate } from '../review/gate';
-import { applyStrEdits, EditApplyError } from './edits';
+import { applyHunks, renderHunk } from '../review/hunks';
+import type { ReviewGate } from '../review/gate';
+import { buildProposal } from '../review/proposal';
 
 /** Hooks the UI listens to (timeline, ledger). All optional. */
 export interface ToolEvents {
@@ -93,6 +93,35 @@ export function registerTools(server: McpServer, host: EditorHost, gate: ReviewG
     },
   );
 
+  async function reviewAndWrite(tool: 'propose_edit' | 'create_file', args: unknown) {
+    const built = await buildProposal(host, tool, args);
+    if (!built.ok) return fail(`Edit not applied: ${built.error}`);
+    const p = built.proposal;
+    if (p.newText === p.oldText && tool === 'propose_edit') return text(`No change: the edits leave ${p.path} identical.`);
+    const decision = await gate.decide(p);
+    const accepted = new Set(decision.accepted);
+    const rejected = p.hunks.map(h => h.index).filter(i => !accepted.has(i));
+    if (accepted.size === 0) {
+      return text(`Nothing was written to ${p.path}: ${decision.note ?? `the user rejected all ${p.hunks.length} hunk(s).`}`);
+    }
+    if (tool === 'create_file') {
+      await host.createFile(p.path, p.newText);
+      events.onFileWritten?.(p.path, [...accepted], []);
+      return text(`Created ${p.path} (${p.newText.split('\n').length} lines).`);
+    }
+    // Re-read right before writing: if the file changed during review, refuse rather than clobber.
+    if ((await host.readText(p.path)) !== p.oldText) return fail(`${p.path} changed while the edit was under review; re-read it and propose again.`);
+    await host.writeText(p.path, applyHunks(p.oldText, p.newText, accepted));
+    events.onFileWritten?.(p.path, [...accepted], rejected);
+    const lines = [`Applied ${accepted.size} of ${p.hunks.length} hunk(s) to ${p.path}.`];
+    if (rejected.length) {
+      lines.push(`Rejected by the user (NOT applied): hunk ${rejected.map(i => i + 1).join(', ')}.`);
+      for (const i of rejected) lines.push(renderHunk(p.hunks[i]));
+    }
+    if (decision.note) lines.push(`User note: ${decision.note}`);
+    return text(lines.join('\n'));
+  }
+
   server.registerTool(
     'propose_edit',
     {
@@ -108,37 +137,7 @@ export function registerTools(server: McpServer, host: EditorHost, gate: ReviewG
     },
     async args => {
       events.onToolCall?.('propose_edit', args);
-      let rel: string;
-      let oldText: string;
-      let newText: string;
-      try {
-        rel = safeRelPath(root, args.path);
-        oldText = await host.readText(rel);
-        newText = applyStrEdits(oldText, args.edits);
-      } catch (e) {
-        const msg = e instanceof EditApplyError ? e.message : String((e as Error).message ?? e);
-        return fail(`Edit not applied: ${msg}`);
-      }
-      if (newText === oldText) return text(`No change: the edits leave ${rel} identical.`);
-      const hunks = computeHunks(oldText, newText);
-      const decision = await gate.decide({ key: proposalKey('propose_edit', args), tool: 'propose_edit', path: rel, oldText, newText, hunks });
-      const accepted = new Set(decision.accepted);
-      const rejected = hunks.map(h => h.index).filter(i => !accepted.has(i));
-      if (accepted.size === 0) {
-        return text(`User rejected all ${hunks.length} hunk(s) in ${rel}; nothing was written.${decision.note ? ` User note: ${decision.note}` : ''}`);
-      }
-      // Re-read right before writing: if the file changed under us, refuse rather than clobber.
-      const current = await host.readText(rel);
-      if (current !== oldText) return fail(`${rel} changed while the edit was under review; re-read it and propose again.`);
-      await host.writeText(rel, applyHunks(oldText, newText, accepted));
-      events.onFileWritten?.(rel, [...accepted], rejected);
-      const lines = [`Applied ${accepted.size} of ${hunks.length} hunk(s) to ${rel}.`];
-      if (rejected.length) {
-        lines.push(`Rejected by the user (NOT applied): ${rejected.map(i => i + 1).join(', ')}.`);
-        for (const i of rejected) lines.push(renderHunk(hunks[i]));
-        if (decision.note) lines.push(`User note: ${decision.note}`);
-      }
-      return text(lines.join('\n'));
+      return reviewAndWrite('propose_edit', args);
     },
   );
 
@@ -151,21 +150,7 @@ export function registerTools(server: McpServer, host: EditorHost, gate: ReviewG
     },
     async args => {
       events.onToolCall?.('create_file', args);
-      let rel: string;
-      try {
-        rel = safeRelPath(root, args.path);
-        if (await host.exists(rel)) return fail(`${rel} already exists; use propose_edit.`);
-      } catch (e) {
-        return fail(String((e as Error).message ?? e));
-      }
-      const hunks = computeHunks('', args.content);
-      const decision = await gate.decide({ key: proposalKey('create_file', args), tool: 'create_file', path: rel, oldText: '', newText: args.content, hunks });
-      if (decision.accepted.length === 0) {
-        return text(`User rejected creating ${rel}; nothing was written.${decision.note ? ` User note: ${decision.note}` : ''}`);
-      }
-      await host.createFile(rel, args.content);
-      events.onFileWritten?.(rel, decision.accepted, []);
-      return text(`Created ${rel} (${args.content.split('\n').length} lines).`);
+      return reviewAndWrite('create_file', args);
     },
   );
 }

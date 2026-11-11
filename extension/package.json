@@ -25,6 +25,14 @@
       {
         "command": "keel.inline.edit",
         "title": "Keel: Inline Edit"
+      },
+      {
+        "command": "keel.run.undo",
+        "title": "Keel: Undo Last Run"
+      },
+      {
+        "command": "keel.review.done",
+        "title": "Keel: Done Reviewing This File"
       }
     ],
     "keybindings": [
@@ -33,6 +41,12 @@
         "key": "ctrl+alt+k",
         "mac": "cmd+alt+k",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "keel.review.done",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "resourceScheme == keel-review"
       }
     ],
     "configuration": {
@@ -69,6 +83,14 @@
           "description": "Name under which Keel registers its MCP server in TrueForge."
         }
       }
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "keel.review.done",
+          "when": "resourceScheme == keel-review"
+        }
+      ]
     }
   },
   "scripts": {

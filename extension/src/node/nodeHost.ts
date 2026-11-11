@@ -36,6 +36,9 @@ export class NodeHost implements EditorHost {
     await fs.mkdir(path.dirname(this.abs(rel)), { recursive: true });
     await fs.writeFile(this.abs(rel), text, { encoding: 'utf8', flag: 'wx' });
   }
+  async deleteFile(rel: string) {
+    await fs.unlink(this.abs(rel));
+  }
   log(m: string) {
     this.logger(m);
   }

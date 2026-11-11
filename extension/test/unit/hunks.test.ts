@@ -8,10 +8,10 @@ const NEW = ['a', 'B', 'c', 'd', 'e2', 'e3', 'f', 'g', 'h'].join('\n') + '\n';
 describe('hunks', () => {
   it('splits a diff into independent change blocks', () => {
     const hunks = computeHunks(OLD, NEW);
-    expect(hunks.map(h => [h.oldStart, h.oldLines, h.newLines])).toEqual([
-      [2, ['b'], ['B']],
-      [5, ['e'], ['e2', 'e3']],
-      [8, [], ['h']],
+    expect(hunks.map(h => [h.oldStart, h.newStart, h.oldLines, h.newLines])).toEqual([
+      [2, 2, ['b'], ['B']],
+      [5, 5, ['e'], ['e2', 'e3']],
+      [8, 9, [], ['h']],
     ]);
   });
 
@@ -58,5 +58,23 @@ describe('applyStrEdits', () => {
   });
   it('explains a miss', () => {
     expect(() => applyStrEdits(src, [{ old_str: 'def h():', new_str: '' }])).toThrow(/not found/);
+  });
+});
+
+import { buildUnifiedView } from '../../src/core/review/unified';
+describe('unified view', () => {
+  it('interleaves removed then added lines per hunk', () => {
+    const v = buildUnifiedView(OLD, computeHunks(OLD, NEW));
+    expect(v.text.split('\n').slice(0, -1)).toEqual(['a', 'b', 'B', 'c', 'd', 'e', 'e2', 'e3', 'f', 'g', 'h']);
+    expect(v.hunks).toEqual([
+      { index: 0, removed: [1, 2], added: [2, 3] },
+      { index: 1, removed: [5, 6], added: [6, 8] },
+      { index: 2, removed: [10, 10], added: [10, 11] },
+    ]);
+  });
+  it('handles a new file', () => {
+    const v = buildUnifiedView('', computeHunks('', 'x\ny\n'));
+    expect(v.text).toBe('x\ny\n');
+    expect(v.hunks).toEqual([{ index: 0, removed: [0, 0], added: [0, 2] }]);
   });
 });

@@ -4,8 +4,20 @@ A VS Code coding agent whose agent loop runs on [TrueForge](https://github.com/t
 Keel's editor (read, search, propose edits) is exposed to the agent as MCP tools; every write is
 gated by TrueForge tool approval and reviewed hunk by hunk.
 
-> Status: walking skeleton (build steps 1-4). Per-hunk review UI, inline edit, context engine and
-> model fallback are next. Starting point: **from scratch** (no upstream fork).
+> Status: build steps 1-5 done (TrueForge loop, MCP tools, approval-driven per-hunk review, run journal
+> and undo). Inline edit, context engine and model fallback are next. Starting point: **from scratch**
+> (no upstream fork).
+
+## How review works
+
+Write tools (`propose_edit`, `create_file`) are gated by TrueForge tool approval. When a turn pauses,
+Keel opens a read-only review document per file: each hunk shows its removed lines (red) and added lines
+(green) with **Accept / Reject** CodeLens buttons. Press **Done reviewing** (Ctrl/Cmd+Enter) and Keel
+answers TrueForge: allow if at least one hunk was accepted, deny with a reason otherwise. When TrueForge
+then runs the tool, Keel's MCP server writes **only the accepted hunks**, in one `WorkspaceEdit`
+(Ctrl/Cmd+Z undoes it), and tells the model which hunks were rejected. **Keel: Undo Last Run** restores
+every file the run touched. A tool call without a recorded decision, or arriving after Stop, writes
+nothing.
 
 ## Quick start (development)
 

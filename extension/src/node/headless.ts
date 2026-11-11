@@ -7,7 +7,8 @@
  */
 import { NodeHost } from './nodeHost';
 import { startMcpServer } from '../core/mcp/server';
-import { AutoAcceptGate } from '../core/review/gate';
+import { DecisionLedger, type Reviewer } from '../core/review/ledger';
+import { JournaledHost } from '../core/review/journal';
 import { createClient, registerMcpServer } from '../core/trueforge/client';
 import { runRequest } from '../core/trueforge/turnRunner';
 
@@ -26,10 +27,28 @@ async function main() {
   const mcpName = arg('mcp-name', agentName ? 'keel-editor' : 'keel-headless');
   const request = process.argv[process.argv.length - 1];
 
-  const host = new NodeHost(root, m => console.error(`[host] ${m}`));
+  // --reject "path:hunk,hunk;path2:all" rejects those hunks (1-based); everything else is accepted.
+  const rejectSpec = arg('reject', '');
+  const rejects = new Map<string, string[]>(
+    rejectSpec ? rejectSpec.split(';').map(part => { const [p, h] = part.split(':'); return [p, (h ?? 'all').split(',')] as [string, string[]]; }) : [],
+  );
+  const reviewer: Reviewer = {
+    async review(proposals) {
+      return proposals.map(p => {
+        const r = [...rejects.entries()].find(([k]) => p.path.endsWith(k))?.[1] ?? [];
+        const accepted = p.hunks.map(h => h.index).filter(i => !(r.includes('all') || r.includes(String(i + 1))));
+        console.log(`[review] ${p.path}: ${p.hunks.length} hunk(s), accepting ${accepted.map(i => i + 1).join(',') || 'none'}`);
+        return { accepted, note: accepted.length < p.hunks.length ? 'headless reviewer rejected some hunks' : undefined };
+      });
+    },
+  };
+  const host = new JournaledHost(new NodeHost(root, m => console.error(`[host] ${m}`)));
+  const ledger = new DecisionLedger(host, reviewer, { autoDecide: () => ({ status: 'allow' }) });
+  host.beginRun();
+  ledger.begin();
   const mcp = await startMcpServer({
     host,
-    gate: new AutoAcceptGate(),
+    gate: ledger,
     events: {
       onToolCall: (n, a) => console.log(`\n[tool] ${n} ${JSON.stringify(a).slice(0, 160)}`),
       onFileWritten: (p, ok, rej) => console.log(`[write] ${p} applied=${ok.map(i => i + 1)} rejected=${rej.map(i => i + 1)}`),
@@ -59,10 +78,15 @@ async function main() {
       if (ev.type === 'tool.approval_required') console.log('\n[keel] approval required');
     },
     onApproval: async calls => {
-      for (const c of calls) console.log(`[keel] auto-approving ${c.toolName}`);
-      return calls.map(() => ({ status: 'allow' as const }));
+      const answers = await ledger.onApproval(calls);
+      calls.forEach((c, i) => console.log(`[keel] ${c.toolName} -> ${JSON.stringify(answers[i])}`));
+      return answers;
     },
   });
+  if (process.argv.includes('--revert')) {
+    const r = await host.revertRun();
+    console.log(`[keel] undo run: reverted=${r.reverted.join(',')} skipped=${r.skipped.join(',')}`);
+  }
   console.log(`\n[keel] outcome: ${JSON.stringify(outcome)}`);
   await mcp.close();
   process.exit(outcome.status === 'done' ? 0 : 1);

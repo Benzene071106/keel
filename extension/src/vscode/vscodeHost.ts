@@ -58,6 +58,12 @@ export class VscodeHost implements EditorHost {
     if (!(await vscode.workspace.applyEdit(edit))) throw new Error(`VS Code refused to create ${rel}`);
   }
 
+  async deleteFile(rel: string): Promise<void> {
+    const edit = new vscode.WorkspaceEdit();
+    edit.deleteFile(this.uri(rel), { ignoreIfNotExists: true });
+    if (!(await vscode.workspace.applyEdit(edit))) throw new Error(`VS Code refused to delete ${rel}`);
+  }
+
   log(message: string): void {
     this.out.appendLine(message);
   }

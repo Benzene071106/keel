@@ -8,6 +8,8 @@ export interface Hunk {
   index: number;
   /** 1-based first old line this hunk replaces (or inserts before). */
   oldStart: number;
+  /** 1-based first line of the hunk in the new text (where its new lines begin). */
+  newStart: number;
   oldLines: string[];
   newLines: string[];
 }
@@ -44,11 +46,13 @@ function splitLines(text: string): string[] {
 export function computeHunks(oldText: string, newText: string): Hunk[] {
   const hunks: Hunk[] = [];
   let line = 1;
+  let newLine = 1;
   for (const s of segments(oldText, newText)) {
     if (s.kind === 'change') {
-      hunks.push({ index: hunks.length, oldStart: line, oldLines: splitLines(s.oldText), newLines: splitLines(s.newText) });
+      hunks.push({ index: hunks.length, oldStart: line, newStart: newLine, oldLines: splitLines(s.oldText), newLines: splitLines(s.newText) });
     }
     line += splitLines(s.oldText).length;
+    newLine += splitLines(s.newText).length;
   }
   return hunks;
 }
