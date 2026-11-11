@@ -43,7 +43,7 @@ export function toolSummary(name: string, args: unknown): string {
   if (name === 'create_file') return `${a.path}, waiting for your review`;
   if (name === 'context_pack') return 'ranking files for this request';
   if (name === 'find_symbol') return String(a.name ?? '');
-  if (name === 'run_command') return String(a.command ?? '');
+  if (name === 'run_command') return `$ ${String(a.command ?? '')}`;
   return String(a.path ?? '');
 }
 

@@ -13,6 +13,7 @@ import { registerInlineEdit } from './inline';
 import { autoDecideCommand } from '../core/command/policy';
 import { KeelPanel, contextEvent, toolSummary } from './panel';
 
+const GATED = new Set(['propose_edit', 'create_file', 'run_command']);
 let mcp: RunningMcpServer | undefined;
 let currentSessionId: string | undefined;
 let stopRequested = false;
@@ -68,7 +69,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (p.dropped.length) out.appendLine(`   left out: ${p.dropped.map(d => d.path).join(', ')}`);
         },
         onToolCall: (name, args) => {
-          panel.post({ type: 'tool', name, summary: toolSummary(name, args) });
+          // Gated tools were already shown when they paused for approval.
+          if (!GATED.has(name)) panel.post({ type: 'tool', name, summary: toolSummary(name, args) });
           out.appendLine(`\n▸ ${name} ${JSON.stringify(args).slice(0, 200)}`);
         },
         onToolError: message => {
@@ -137,6 +139,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               }
             },
             onApproval: async calls => {
+              // Show what is waiting on the user before the review opens, not after it is answered.
+              for (const c of calls) panel.post({ type: 'tool', name: c.toolName, summary: toolSummary(c.toolName, c.args) });
               const answers = await ledger.onApproval(calls);
               answers.forEach((a, i) => {
                 if (a.status !== 'deny') return;
