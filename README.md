@@ -28,7 +28,9 @@ Requirements: Node 22.14+, git, ripgrep (`rg`) on PATH for headless runs.
 #    Keel's localhost MCP server and any local model ("Outbound URL blocked for host 127.0.0.1").
 ./scripts/start-trueforge.sh            # = OUTBOUND_URL_ALLOWED_HOSTS='["127.0.0.1","localhost"]' npx @truefoundry/trueforge@latest
 
-# 2. Configure a model in TrueForge (Settings -> Models), or use the scripted mock model (no API key):
+# 2. Add a real model. The key is typed hidden and goes only to TrueForge, never into a file:
+#      node scripts/add-provider.mjs groq        (then run the sync-agents line it prints, and skip to step 4)
+#    Or use the scripted mock model (no API key):
 node dev/mock-model/server.mjs &        # OpenAI-compatible mock on 127.0.0.1:7802
 ./dev/register-mock-model.sh            # registers provider "mock" with one model per scenario
 
